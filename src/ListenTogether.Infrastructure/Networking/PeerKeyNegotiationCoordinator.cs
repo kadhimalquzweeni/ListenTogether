@@ -21,6 +21,7 @@ public sealed class PeerKeyNegotiationCoordinator : IDisposable
         _session.PeerKeyProofReceived += OnPeerKeyProofReceived;
         _session.ParticipantLeft += OnParticipantLeft;
         _session.ParticipantJoined += OnParticipantJoined;
+        _session.SessionJoined += OnSessionJoined;
         _session.SessionEnded += OnSessionEnded;
         _session.ConnectionClosed += OnConnectionClosed;
     }
@@ -231,6 +232,15 @@ public sealed class PeerKeyNegotiationCoordinator : IDisposable
         return _peers.GetOrAdd(remoteConnectionId, _ => new PeerState());
     }
 
+    private void OnSessionJoined(SessionJoinResult result) =>
+        _ = BeginSessionPeersSafelyAsync(result);
+
+    private async Task BeginSessionPeersSafelyAsync(SessionJoinResult result)
+    {
+        try { await BeginSessionPeersAsync(result).ConfigureAwait(false); }
+        catch (Exception) { ClearPeers(); }
+    }
+
     private void OnParticipantJoined(SessionParticipant participant)
     {
         if (!string.IsNullOrWhiteSpace(participant.ConnectionId))
@@ -277,6 +287,7 @@ public sealed class PeerKeyNegotiationCoordinator : IDisposable
         _session.PeerKeyProofReceived -= OnPeerKeyProofReceived;
         _session.ParticipantLeft -= OnParticipantLeft;
         _session.ParticipantJoined -= OnParticipantJoined;
+        _session.SessionJoined -= OnSessionJoined;
         _session.SessionEnded -= OnSessionEnded;
         _session.ConnectionClosed -= OnConnectionClosed;
         ClearPeers();
