@@ -28,9 +28,9 @@ try {
         } catch { Start-Sleep -Seconds 1 }
     }
     if (-not $ready) { throw "Server did not become healthy at http://127.0.0.1:5000/healthz." }
-    $args = @("run", "--config", $caddyfile, "--adapter", "caddyfile")
+    $caddyArgs = @("run", "--config", $caddyfile, "--adapter", "caddyfile")
     if ($caddyCommand) {
-        $caddy = Start-Process -FilePath $caddyCommand.Source -ArgumentList $args -WorkingDirectory $repoRoot -PassThru
+        $caddy = Start-Process -FilePath $caddyCommand.Source -ArgumentList $caddyArgs -WorkingDirectory $repoRoot -PassThru
     } else {
         $caddy = Start-Process -FilePath $CaddyExe -ArgumentList $args -WorkingDirectory $repoRoot -PassThru
     }
