@@ -255,7 +255,7 @@ public sealed class UdpPeerTransportCoordinator : IAsyncDisposable
 
             foreach (var pair in _peers)
             {
-                if (!pair.Value.ReceiveCodec.TryDecrypt(received.Buffer, _sessionId, out var packet) ||
+                if (!pair.Value.TryDecrypt(received.Buffer, _sessionId, out var packet) ||
                     packet is null)
                     continue;
 
@@ -288,7 +288,7 @@ public sealed class UdpPeerTransportCoordinator : IAsyncDisposable
                 break;
 
             case UdpPacketType.KeepAlive:
-                ProcessKeepAlive(state, remoteEndpoint, packet.Payload);
+                ProcessKeepAlive(peerId, state, remoteEndpoint, packet.Payload);
                 break;
 
             case UdpPacketType.Audio:
@@ -328,13 +328,18 @@ public sealed class UdpPeerTransportCoordinator : IAsyncDisposable
         }
     }
 
-    private void ProcessKeepAlive(PeerState state, IPEndPoint endpoint, byte[] payload)
+    private void ProcessKeepAlive(
+        string peerId,
+        PeerState state,
+        IPEndPoint endpoint,
+        byte[] payload)
     {
         if (payload.Length != 9)
             return;
 
         if (payload[0] == 0)
         {
+            SetPeerConnected(peerId, state, endpoint);
             var response = payload.ToArray();
             response[0] = 1;
             _ = SendControlPacketAsync(state, endpoint, UdpPacketType.KeepAlive, response);
@@ -432,7 +437,8 @@ public sealed class UdpPeerTransportCoordinator : IAsyncDisposable
                 .Cast<Task>()
                 .ToArray();
             try { await Task.WhenAll(tasks).ConfigureAwait(false); }
-            catch (OperationCanceledException) { }
+            catch (Exception exception) when (
+                exception is OperationCanceledException or ObjectDisposedException or SocketException) { }
             _cancellation.Dispose();
             _cancellation = null;
         }
@@ -465,9 +471,28 @@ public sealed class UdpPeerTransportCoordinator : IAsyncDisposable
 
         public byte[] CreatePacket(Guid sessionId, UdpPacketType type, ReadOnlySpan<byte> payload)
         {
-            ObjectDisposedException.ThrowIf(_disposed, this);
-            var sequence = (ulong)Interlocked.Increment(ref _sendSequence);
-            return SendCodec.Encrypt(sessionId, type, sequence, payload);
+            lock (_sync)
+            {
+                ObjectDisposedException.ThrowIf(_disposed, this);
+                var sequence = (ulong)Interlocked.Increment(ref _sendSequence);
+                return SendCodec.Encrypt(sessionId, type, sequence, payload);
+            }
+        }
+
+        public bool TryDecrypt(
+            ReadOnlySpan<byte> datagram,
+            Guid sessionId,
+            out UdpSecurePacket? packet)
+        {
+            lock (_sync)
+            {
+                if (_disposed)
+                {
+                    packet = null;
+                    return false;
+                }
+                return ReceiveCodec.TryDecrypt(datagram, sessionId, out packet);
+            }
         }
 
         public bool TryStartChecks() => Interlocked.CompareExchange(ref _checking, 1, 0) == 0;
