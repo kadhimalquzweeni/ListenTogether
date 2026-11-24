@@ -149,6 +149,7 @@ public sealed class UdpPeerTransportCoordinatorTests
         await hostTransport.StartAsync();
 
         Assert.Contains("No remote UDP candidates", await failed.Task.WaitAsync(TimeSpan.FromSeconds(5)));
+        await Task.Delay(100); // Allow the failed check round to release its per-peer retry guard.
 
         await listenerCandidates.StartAsync(new Uri("http://127.0.0.1:5000"));
         await using var listenerTransport = new UdpPeerTransportCoordinator(listenerCandidates, listenerKeys, SessionId);
