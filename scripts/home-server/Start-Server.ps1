@@ -1,20 +1,87 @@
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory = $true)][string]$Domain,
     [Parameter(Mandatory = $true)][string]$AcmeEmail,
     [string]$ServerExe = (Join-Path $PSScriptRoot "..\..\artifacts\server\ListenTogether.Server.exe"),
     [string]$CaddyExe = "caddy"
 )
+
 $ErrorActionPreference = "Stop"
-if (-not (Test-Path $ServerExe)) { throw "Server executable not found: $ServerExe. Publish ListenTogether.Server for win-x64 first." }
+
+function Test-PublicIPv4 {
+    param([System.Net.IPAddress]$Address)
+    if ($Address.AddressFamily -ne [System.Net.Sockets.AddressFamily]::InterNetwork) { return $false }
+    if ([System.Net.IPAddress]::IsLoopback($Address)) { return $false }
+    $b = $Address.GetAddressBytes()
+    if ($b[0] -eq 0 -or $b[0] -eq 10 -or $b[0] -eq 127 -or $b[0] -ge 224) { return $false }
+    if ($b[0] -eq 100 -and $b[1] -ge 64 -and $b[1] -le 127) { return $false }
+    if ($b[0] -eq 169 -and $b[1] -eq 254) { return $false }
+    if ($b[0] -eq 172 -and $b[1] -ge 16 -and $b[1] -le 31) { return $false }
+    if ($b[0] -eq 192 -and $b[1] -eq 168) { return $false }
+    if ($b[0] -eq 192 -and $b[1] -eq 0 -and $b[2] -eq 2) { return $false }
+    if ($b[0] -eq 198 -and ($b[1] -eq 18 -or $b[1] -eq 19 -or $b[1] -eq 51)) { return $false }
+    if ($b[0] -eq 203 -and $b[1] -eq 0 -and $b[2] -eq 113) { return $false }
+    return $true
+}
+
+function Get-PublicIPv4 {
+    $providers = @("https://api.ipify.org", "https://checkip.amazonaws.com")
+    $detected = [System.Collections.Generic.List[string]]::new()
+    foreach ($provider in $providers) {
+        try {
+            $value = (Invoke-RestMethod -Uri $provider -TimeoutSec 10).ToString().Trim()
+            $address = $null
+            if (-not [System.Net.IPAddress]::TryParse($value, [ref]$address) -or
+                -not (Test-PublicIPv4 -Address $address)) {
+                throw "The provider returned an invalid or non-public IPv4 address."
+            }
+            $detected.Add($address.ToString())
+        }
+        catch {
+            Write-Warning "A public IP discovery service could not be reached or returned an invalid address."
+        }
+    }
+    if ($detected.Count -eq 0) {
+        throw "Couldn't detect a public IPv4 address. Check the internet connection and try again."
+    }
+    if (@($detected | Select-Object -Unique).Count -gt 1) {
+        throw "Public IP discovery services returned different addresses. Refusing to start with an uncertain address."
+    }
+    return $detected[0]
+}
+
+if (-not (Test-Path $ServerExe)) {
+    throw "Server executable not found: $ServerExe. Publish ListenTogether.Server for win-x64 first."
+}
 $caddyCommand = Get-Command $CaddyExe -ErrorAction SilentlyContinue
-if (-not $caddyCommand -and -not (Test-Path $CaddyExe)) { throw "Caddy was not found. Install Caddy and put caddy.exe on PATH, or pass -CaddyExe." }
+$caddyPath = if ($caddyCommand) { $caddyCommand.Source } elseif (Test-Path $CaddyExe) { (Resolve-Path $CaddyExe).Path } else { $null }
+if (-not $caddyPath) {
+    throw "Caddy was not found. Install Caddy 2.10 or later and put caddy.exe on PATH, or pass -CaddyExe."
+}
+$versionOutput = (& $caddyPath version 2>&1 | Select-Object -First 1).ToString()
+if ($versionOutput -notmatch 'v?(\d+)\.(\d+)') {
+    throw "Couldn't determine the Caddy version: $versionOutput"
+}
+$caddyMajor = [int]$Matches[1]
+$caddyMinor = [int]$Matches[2]
+if ($caddyMajor -lt 2 -or ($caddyMajor -eq 2 -and $caddyMinor -lt 10)) {
+    throw "Caddy 2.10 or later is required for ACME certificate profile support. Found: $versionOutput"
+}
+
+$publicIp = Get-PublicIPv4
+$publicUrl = "https://$publicIp"
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $caddyfile = Join-Path $repoRoot "deploy\Caddyfile.windows"
 if (-not (Test-Path $caddyfile)) { throw "Caddy configuration not found: $caddyfile" }
+
 $env:ASPNETCORE_ENVIRONMENT = "Production"
 $env:ACME_EMAIL = $AcmeEmail
-$env:LISTENTOGETHER_DOMAIN = $Domain
+$env:LISTENTOGETHER_PUBLIC_IP = $publicIp
+
+$settingsDirectory = Join-Path $env:LOCALAPPDATA "ListenTogether"
+New-Item -ItemType Directory -Path $settingsDirectory -Force | Out-Null
+$addressPath = Join-Path $settingsDirectory "server-address.txt"
+Set-Content -Path $addressPath -Value $publicUrl -NoNewline -Encoding ASCII
+
 # Kestrel stays on loopback HTTP; Caddy terminates public HTTPS. STUN binds 0.0.0.0:3478/UDP.
 $server = Start-Process -FilePath $ServerExe -WorkingDirectory (Split-Path $ServerExe) -PassThru
 Write-Host "Started ListenTogether server (PID $($server.Id))."
@@ -25,21 +92,26 @@ try {
             Invoke-RestMethod -Uri "http://127.0.0.1:5000/healthz" -TimeoutSec 2 | Out-Null
             $ready = $true
             break
-        } catch { Start-Sleep -Seconds 1 }
+        }
+        catch { Start-Sleep -Seconds 1 }
     }
     if (-not $ready) { throw "Server did not become healthy at http://127.0.0.1:5000/healthz." }
+
     $caddyArgs = @("run", "--config", $caddyfile, "--adapter", "caddyfile")
-    if ($caddyCommand) {
-        $caddy = Start-Process -FilePath $caddyCommand.Source -ArgumentList $caddyArgs -WorkingDirectory $repoRoot -PassThru
-    } else {
-        $caddy = Start-Process -FilePath $CaddyExe -ArgumentList $args -WorkingDirectory $repoRoot -PassThru
-    }
-    Write-Host "Started Caddy (PID $($caddy.Id))." -ForegroundColor Green
-    Write-Host "Public endpoint: https://$Domain"
-    Write-Host "STUN endpoint: $($Domain):3478/UDP"
-    Write-Host "Keep this window open. Caddy needs public DNS and inbound TCP 80/443 to obtain its TLS certificate."
+    $caddy = Start-Process -FilePath $caddyPath -ArgumentList $caddyArgs -WorkingDirectory $repoRoot -PassThru
+
+    Write-Host ""
+    Write-Host "ListenTogether is starting for your current public IP." -ForegroundColor Green
+    Write-Host "Server address: $publicUrl"
+    Write-Host "STUN endpoint: ${publicIp}:3478/UDP"
+    Write-Host "Saved server address to: $addressPath"
+    Write-Host "Give your friend the server address and the session invite code shown by the desktop app."
+    Write-Host ""
+    Write-Host "Caddy obtains and renews a short-lived Let's Encrypt IP certificate automatically."
+    Write-Host "Keep this window open. Your router must forward TCP 80/443 and UDP 3478 to this PC."
     Write-Host "Stop the processes with: Stop-Process -Id $($caddy.Id),$($server.Id)"
-} catch {
+}
+catch {
     Stop-Process -Id $server.Id -ErrorAction SilentlyContinue
     throw
 }
