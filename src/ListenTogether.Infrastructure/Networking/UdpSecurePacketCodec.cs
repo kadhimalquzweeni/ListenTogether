@@ -17,6 +17,8 @@ public sealed class UdpSecurePacketCodec : IDisposable
     private readonly byte[] _key;
     private readonly byte[] _noncePrefix;
     private readonly object _replayLock = new();
+    private readonly object _sendLock = new();
+    private ulong _highestSentSequence;
     private ulong _highestReceivedSequence;
     private ulong _receivedWindow;
     private bool _disposed;
@@ -50,14 +52,21 @@ public sealed class UdpSecurePacketCodec : IDisposable
         BinaryPrimitives.WriteUInt64BigEndian(header.Slice(22, 8), sequence);
         _noncePrefix.CopyTo(header.Slice(30, 4));
 
-        Span<byte> nonce = stackalloc byte[12];
-        _noncePrefix.CopyTo(nonce);
-        BinaryPrimitives.WriteUInt64BigEndian(nonce.Slice(4), sequence);
-        using var aes = new AesGcm(_key, AuthenticationTagSize);
-        aes.Encrypt(nonce, plaintext,
-            packet.AsSpan(HeaderSize, plaintext.Length),
-            packet.AsSpan(HeaderSize + plaintext.Length, AuthenticationTagSize), header);
-        return packet;
+        lock (_sendLock)
+        {
+            if (sequence <= _highestSentSequence)
+                throw new ArgumentOutOfRangeException(nameof(sequence), "Sequence numbers must increase strictly for each sending key.");
+
+            Span<byte> nonce = stackalloc byte[12];
+            _noncePrefix.CopyTo(nonce);
+            BinaryPrimitives.WriteUInt64BigEndian(nonce.Slice(4), sequence);
+            using var aes = new AesGcm(_key, AuthenticationTagSize);
+            aes.Encrypt(nonce, plaintext,
+                packet.AsSpan(HeaderSize, plaintext.Length),
+                packet.AsSpan(HeaderSize + plaintext.Length, AuthenticationTagSize), header);
+            _highestSentSequence = sequence;
+            return packet;
+        }
     }
 
     public bool TryDecrypt(ReadOnlySpan<byte> datagram, Guid expectedSessionId, out UdpSecurePacket? packet)
