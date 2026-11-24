@@ -2,7 +2,13 @@
 
 This guide covers the current desktop and networking implementation. It distinguishes same-LAN testing from internet testing because the relay server must itself be reachable by every participant.
 
-## 1. Build and start the development server
+## 1. Get the Windows desktop package
+
+After a successful Windows CI run, open the repository's **Actions** tab, select the latest successful `.NET` workflow for this feature branch, and download the `ListenTogether-win-x64` artifact. Extract it and run `ListenTogether.App.exe`.
+
+The same workflow also publishes a `ListenTogether-Relay-win-x64` artifact if you want to run the relay outside Docker. Artifacts are retained by GitHub Actions for 14 days.
+
+## 2. Build and start the development server
 
 From the repository root:
 
@@ -17,7 +23,7 @@ The development server exposes:
 
 For same-LAN testing, allow inbound TCP 5000 and UDP 3478 in the server PC's firewall. Find that PC's LAN IPv4 address and use `http://HOST-LAN-IP:5000` as the server URL on both desktop clients.
 
-## 2. Test two desktops on the same LAN
+## 3. Test two desktops on the same LAN
 
 1. Start ListenTogether on both desktops.
 2. Set both server URLs to the same LAN address.
@@ -30,7 +36,7 @@ For same-LAN testing, allow inbound TCP 5000 and UDP 3478 in the server PC's fir
 9. When direct UDP succeeds, both clients report that a direct UDP audio connection has been established. If direct UDP cannot be established, audio should continue through the SignalR relay.
 10. Leave the session and confirm that playback stops.
 
-## 3. Test multiple listeners
+## 4. Test multiple listeners
 
 1. Keep the host session running.
 2. Join from a second listener desktop.
@@ -40,7 +46,7 @@ For same-LAN testing, allow inbound TCP 5000 and UDP 3478 in the server PC's fir
 
 The host sends direct UDP to listeners with an authenticated direct path and excludes those listeners from SignalR relay delivery. Other listeners continue receiving the relayed stream.
 
-## 4. Test internet connectivity
+## 5. Test internet connectivity
 
 For clients on different networks, the signalling/relay server and STUN service must be publicly reachable.
 
@@ -48,7 +54,7 @@ The supplied production Compose setup expects a DNS name and Caddy-managed HTTPS
 
 A home PC behind a typical NAT is not a publicly reachable server just because Docker is running. Without router forwarding, a tunnel, or a public hosting endpoint, remote clients will not be able to reach a server running only on that home PC. The direct UDP peer path does not remove this server reachability requirement.
 
-## 5. Expected fallback behaviour
+## 6. Expected fallback behaviour
 
 - If STUN responds, the clients exchange local and server-reflexive candidates and attempt authenticated UDP connectivity checks.
 - If STUN times out but local interface candidates exist, same-LAN direct connectivity is still attempted.
@@ -56,7 +62,7 @@ A home PC behind a typical NAT is not a publicly reachable server just because D
 - If the UDP path goes stale, the transport retries connectivity checks and the host resumes relaying to that listener when it is no longer considered connected.
 - STUN discovery and direct media are IPv4-only at this stage.
 
-## 6. Automated verification
+## 7. Automated verification
 
 Run the full test suite from the repository root:
 
