@@ -11,6 +11,7 @@ public interface IPeerKeySignalling
     Guid SessionId { get; }
     string? ConnectionId { get; }
 
+    event Action<PeerCandidateMessage>? PeerCandidateReceived;
     event Action<PeerKeyOfferMessage>? PeerKeyOfferReceived;
     event Action<PeerKeyProofMessage>? PeerKeyProofReceived;
     event Action<SessionParticipant>? ParticipantJoined;
@@ -19,6 +20,7 @@ public interface IPeerKeySignalling
     event Action<string>? SessionEnded;
     event Action<Exception?>? ConnectionClosed;
 
+    Task PublishPeerCandidateAsync(PeerCandidate candidate, CancellationToken cancellationToken = default);
     Task PublishPeerKeyOfferAsync(PeerKeyOffer offer, CancellationToken cancellationToken = default);
     Task PublishPeerKeyProofAsync(
         string toConnectionId,
