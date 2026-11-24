@@ -151,4 +151,4 @@ The release workflow publishes a self-contained Windows x64 desktop package when
 
 ## Deployment
 
-See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for local Docker, LAN testing, and public HTTPS relay deployment.
+See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for local Docker, LAN testing, and public HTTPS relay deployment. Use [docs/SMOKE_TEST.md](docs/SMOKE_TEST.md) to verify real Windows audio capture and playback.
