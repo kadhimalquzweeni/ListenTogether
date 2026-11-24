@@ -95,7 +95,7 @@ public sealed class AudioCaptureMixerSessionTests
     private sealed class FakeCapture(AudioSource source) : IAudioCapture
     {
         public AudioSource Source { get; } = source;
-        public AudioFormat Format => Format;
+        public AudioFormat Format => AudioFormat.Broadcast;
         public bool IsCapturing { get; private set; }
         public bool IsDisposed { get; private set; }
 
