@@ -59,7 +59,7 @@ A home PC behind a typical NAT is not a publicly reachable server just because D
 - If STUN responds, the clients exchange local and server-reflexive candidates and attempt authenticated UDP connectivity checks.
 - If STUN times out but local interface candidates exist, same-LAN direct connectivity is still attempted.
 - If direct UDP cannot be established, the listener receives no audio and the UI displays a diagnostic.
-- If the UDP path goes stale, the transport reports the lost path and retries connectivity checks. Audio remains direct-only and is not relayed.
+- If the UDP path goes stale, the next keepalive detects it and the UI shows a new direct-connection attempt; if that attempt fails, it displays the reason. Audio remains direct-only and is not relayed.
 - STUN discovery and direct media are IPv4-only at this stage.
 
 ## 7. Automated verification
