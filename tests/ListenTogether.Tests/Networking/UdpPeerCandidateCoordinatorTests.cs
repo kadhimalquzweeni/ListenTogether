@@ -163,6 +163,7 @@ public sealed class UdpPeerCandidateCoordinatorTests
         public Guid SessionId => sessionId;
         public string? ConnectionId => connectionId;
 
+#pragma warning disable CS0067
         public event Action<PeerCandidateMessage>? PeerCandidateReceived;
         public event Action<PeerKeyOfferMessage>? PeerKeyOfferReceived;
         public event Action<PeerKeyProofMessage>? PeerKeyProofReceived;
@@ -171,6 +172,7 @@ public sealed class UdpPeerCandidateCoordinatorTests
         public event Action<SessionJoinResult>? SessionJoined;
         public event Action<string>? SessionEnded;
         public event Action<Exception?>? ConnectionClosed;
+#pragma warning restore CS0067
 
         public Task PublishPeerCandidateAsync(PeerCandidate candidate, CancellationToken cancellationToken = default)
         {
