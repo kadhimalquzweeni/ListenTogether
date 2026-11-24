@@ -24,6 +24,7 @@ Listeners join with an eight-character invite code and hear the host's live mix.
 - Per-listener SignalR fallback when direct UDP is unavailable.
 - Sequence-aware jitter buffering shared by direct and relayed audio.
 - Automated tests for audio, key negotiation, candidate exchange, encrypted UDP media, relay fallback and STUN behaviour.
+- CI validates the PowerShell syntax of the Windows home-server scripts before building and testing.
 
 ## Intended user experience
 
