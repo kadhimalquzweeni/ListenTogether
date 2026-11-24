@@ -10,20 +10,28 @@ public sealed class UserSettingsStore
 {
     private const string DefaultServerUrl = "http://localhost:5000";
     private readonly string _settingsPath;
+    private readonly string? _discoveredServerAddressPath;
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
 
-    public UserSettingsStore(string? settingsPath = null)
+    public UserSettingsStore(string? settingsPath = null, string? discoveredServerAddressPath = null)
     {
         _settingsPath = settingsPath ?? Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
             "ListenTogether",
             "settings.json");
+
+        _discoveredServerAddressPath = discoveredServerAddressPath ??
+            (settingsPath is null
+                ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "ListenTogether", "server-address.txt")
+                : null);
     }
 
     public UserSettings Load()
     {
+        var discoveredServerUrl = LoadDiscoveredServerUrl();
         if (!File.Exists(_settingsPath))
-            return CreateDefaults();
+            return CreateDefaults(discoveredServerUrl);
 
         try
         {
@@ -35,15 +43,17 @@ public sealed class UserSettingsStore
                 string.IsNullOrWhiteSpace(settings.DisplayName) ||
                 settings.DisplayName.Trim().Length > 32)
             {
-                return CreateDefaults();
+                return CreateDefaults(discoveredServerUrl);
             }
 
-            return new UserSettings(uri.ToString().TrimEnd('/'), settings.DisplayName.Trim());
+            return new UserSettings(
+                discoveredServerUrl ?? uri.ToString().TrimEnd('/'),
+                settings.DisplayName.Trim());
         }
         catch (Exception exception) when (
             exception is IOException or UnauthorizedAccessException or JsonException)
         {
-            return CreateDefaults();
+            return CreateDefaults(discoveredServerUrl);
         }
     }
 
@@ -78,13 +88,36 @@ public sealed class UserSettingsStore
         }
     }
 
-    private static UserSettings CreateDefaults()
+    private string? LoadDiscoveredServerUrl()
+    {
+        if (string.IsNullOrWhiteSpace(_discoveredServerAddressPath) ||
+            !File.Exists(_discoveredServerAddressPath))
+        {
+            return null;
+        }
+
+        try
+        {
+            var value = File.ReadAllText(_discoveredServerAddressPath).Trim();
+            return Uri.TryCreate(value, UriKind.Absolute, out var uri) &&
+                   uri.Scheme == Uri.UriSchemeHttps &&
+                   !string.IsNullOrWhiteSpace(uri.Host)
+                ? uri.ToString().TrimEnd('/')
+                : null;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
+
+    private static UserSettings CreateDefaults(string? discoveredServerUrl = null)
     {
         var displayName = Environment.UserName;
         if (displayName.Length > 32)
             displayName = displayName[..32];
 
-        return new UserSettings(DefaultServerUrl, displayName);
+        return new UserSettings(discoveredServerUrl ?? DefaultServerUrl, displayName);
     }
 }
 
