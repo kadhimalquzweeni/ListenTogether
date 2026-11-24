@@ -12,7 +12,7 @@ namespace ListenTogether.Infrastructure.Audio;
 public sealed class OpusAudioEncoder : IDisposable
 {
     public const int FrameDurationMilliseconds = 20;
-    public const int FrameSamplesPerChannel = AudioFormat.Broadcast.SampleRate * FrameDurationMilliseconds / 1_000;
+    public const int FrameSamplesPerChannel = 48_000 * FrameDurationMilliseconds / 1_000;
     public const int MaximumPacketBytes = 1_275;
 
     private readonly IOpusEncoder _encoder;
