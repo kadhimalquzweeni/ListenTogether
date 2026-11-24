@@ -38,6 +38,24 @@ public partial class MainWindow : Window
         }
     }
 
+    private void OnCopyHostingDetailsClick(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is not MainViewModel viewModel ||
+            string.IsNullOrWhiteSpace(viewModel.HostingCheckResult))
+            return;
+
+        try
+        {
+            Clipboard.SetText(viewModel.HostingCheckResult);
+            viewModel.StatusMessage = "Hosting check details copied to the clipboard.";
+        }
+        catch (Exception exception) when (exception is System.Runtime.InteropServices.ExternalException or InvalidOperationException)
+        {
+            MessageBox.Show(this, "Couldn't copy the hosting check details. Please try again.",
+                "ListenTogether", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
     private void OnCreateSessionRequested(object? sender, EventArgs e)
     {
         if (DataContext is not MainViewModel viewModel)
