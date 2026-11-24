@@ -12,12 +12,15 @@ public sealed class ListeningViewModel : INotifyPropertyChanged, IAsyncDisposabl
 {
     private readonly SignalRSessionClient _client;
     private readonly PeerKeyNegotiationCoordinator _peerNegotiation;
+    private readonly UdpPeerCandidateCoordinator _peerCandidates;
+    private bool _udpCandidatesReady;
     private readonly OpusAudioDecoder _decoder = new();
     private WasapiAudioPlayback? _playback;
     private int _isDisposed;
     private readonly object _decodeLock = new();
     private readonly SemaphoreSlim _lifecycle = new(1, 1);
     private readonly string _sessionCode;
+    private readonly Uri _serverUri;
     private bool _isConnecting;
     private bool _isConnected;
     private string _statusMessage = "Connecting to the listening session…";
@@ -27,9 +30,11 @@ public sealed class ListeningViewModel : INotifyPropertyChanged, IAsyncDisposabl
     public ListeningViewModel(Uri serverUri, string displayName, string sessionCode)
     {
         _sessionCode = sessionCode;
+        _serverUri = serverUri;
         _client = new SignalRSessionClient(serverUri);
         _peerNegotiation = new PeerKeyNegotiationCoordinator(_client);
         _peerNegotiation.PeerSecured += OnPeerSecured;
+        _peerCandidates = new UdpPeerCandidateCoordinator(_client);
         _client.AudioPacketReceived += OnAudioPacketReceived;
         _client.ParticipantJoined += OnParticipantJoined;
         _client.ParticipantLeft += OnParticipantLeft;
@@ -110,11 +115,26 @@ public sealed class ListeningViewModel : INotifyPropertyChanged, IAsyncDisposabl
                     return;
                 }
 
+                try
+                {
+                    await _peerCandidates.StartAsync(
+                        _serverUri,
+                        stunTimeout: TimeSpan.FromSeconds(2));
+                    _udpCandidatesReady = true;
+                }
+                catch (Exception exception)
+                {
+                    _udpCandidatesReady = false;
+                    StatusMessage = $"UDP discovery unavailable; audio will use the SignalR relay. {exception.Message}";
+                }
+
                 HostDisplayName = result.HostDisplayName;
                 ParticipantCount = result.Participants.Count;
                 IsConnected = true;
                 _playback.Start();
-                StatusMessage = $"You're listening with {HostDisplayName}.";
+                StatusMessage = _udpCandidatesReady
+                    ? $"You're listening with {HostDisplayName}. UDP candidates exchanged; audio remains relayed."
+                    : $"You're listening with {HostDisplayName} (relay mode).";
             }
             catch (Exception exception)
             {
@@ -151,6 +171,7 @@ public sealed class ListeningViewModel : INotifyPropertyChanged, IAsyncDisposabl
         IsConnected = false;
 
         _peerNegotiation.Dispose();
+        _peerCandidates.Dispose();
         try { await _client.LeaveSessionAsync(); }
         catch (Exception exception) { StatusMessage = $"Couldn't leave cleanly: {exception.Message}"; }
 
@@ -186,6 +207,7 @@ public sealed class ListeningViewModel : INotifyPropertyChanged, IAsyncDisposabl
                 _playback = null;
             }
             _peerNegotiation.Dispose();
+            _peerCandidates.Dispose();
             await _client.DisposeAsync();
         }
         finally
