@@ -138,12 +138,16 @@
         </Grid.RowDefinitions>
 
         <Grid Grid.Row="0" Margin="0,0,0,24">
-            <StackPanel>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel Grid.Column="0">
                 <TextBlock Text="Choose your audio" FontSize="27" FontWeight="SemiBold" />
                 <TextBlock Text="Select exactly what you want everyone in your session to hear."
                            FontSize="13" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,7,0,0" />
             </StackPanel>
-            <Button Content="✕" Style="{StaticResource SmallActionButton}" Width="38" Height="36"
+            <Button Grid.Column="1" Content="✕" Style="{StaticResource SmallActionButton}" Width="38" Height="36"
                     HorizontalAlignment="Right" VerticalAlignment="Top" Click="OnCloseClick" />
         </Grid>
 
@@ -158,7 +162,7 @@
                          IsChecked="{Binding IsSystemAudioMode}" IsEnabled="{Binding CanEditSources}" />
             <RadioButton Grid.Column="2" GroupName="SourceMode" Style="{StaticResource ModeRadio}"
                          Content="Selected applications" Tag="Choose multiple apps and control each one separately."
-                         IsChecked="{Binding IsSystemAudioMode, Converter={StaticResource InverseBooleanConverter}}" IsEnabled="{Binding IsCapturing, Converter={StaticResource InverseBooleanConverter}}" />
+                         IsChecked="{Binding IsSystemAudioMode, Converter={StaticResource InverseBooleanConverter}}" IsEnabled="{Binding CanEditSources}" />
         </Grid>
 
         <Border Grid.Row="2" Background="{StaticResource PanelBackgroundBrush}" BorderBrush="#303541"
@@ -170,7 +174,11 @@
                 </Grid.RowDefinitions>
 
                 <Grid Grid.Row="0" Margin="0,0,0,14">
-                    <StackPanel>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0">
                         <TextBlock Text="{Binding AvailableApplicationCount, StringFormat={}{0} applications available}"
                                    FontSize="15" FontWeight="SemiBold" />
                         <TextBlock Text="Select the applications to include in the shared mix."
@@ -178,7 +186,7 @@
                     </StackPanel>
                     <Button Grid.Column="1" Content="Refresh" Command="{Binding RefreshCommand}"
                             Style="{StaticResource SmallActionButton}" HorizontalAlignment="Right"
-                            IsEnabled="{Binding IsCapturing, Converter={StaticResource InverseBooleanConverter}}" />
+                            IsEnabled="{Binding CanEditSources}" />
                 </Grid>
 
                 <Grid Grid.Row="1">
