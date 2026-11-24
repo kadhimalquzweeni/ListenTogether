@@ -1,12 +1,15 @@
 <Window x:Class="ListenTogether.App.AudioSourceWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"\n        xmlns:local="clr-namespace:ListenTogether.App"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:ListenTogether.App"
         Title="Choose audio sources — ListenTogether"
         Width="960" Height="760" MinWidth="820" MinHeight="640"
         WindowStartupLocation="CenterOwner"
         Background="{StaticResource WindowBackgroundBrush}"
         Foreground="{StaticResource TextPrimaryBrush}">
-    <Window.Resources>\n        <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />\n        <local:InverseBooleanConverter x:Key="InverseBooleanConverter" />
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
+        <local:InverseBooleanConverter x:Key="InverseBooleanConverter" />
         <Style x:Key="ModeRadio" TargetType="RadioButton">
             <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
             <Setter Property="FontSize" Value="14" />
@@ -221,7 +224,8 @@
                                                     <ColumnDefinition Width="58" />
                                                 </Grid.ColumnDefinitions>
                                                 <CheckBox Grid.Column="0" Style="{StaticResource SourceCheckBox}"
-                                                          IsChecked="{Binding IsSelected}" />
+                                                          IsChecked="{Binding IsSelected}"
+                                                          IsEnabled="{Binding DataContext.IsCapturing, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource InverseBooleanConverter}}" />
                                                 <StackPanel Grid.Column="1" VerticalAlignment="Center">
                                                     <TextBlock Text="{Binding DisplayName}" FontSize="13" FontWeight="SemiBold"
                                                                TextTrimming="CharacterEllipsis" />

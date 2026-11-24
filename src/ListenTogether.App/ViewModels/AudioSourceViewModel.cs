@@ -84,7 +84,9 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
         private set => SetProperty(ref _outputLevel, Math.Clamp(value, 0, 100));
     }
 
-    public int SelectedApplicationCount => ApplicationSources.Count(source => source.IsSelected);\n    public int AvailableApplicationCount => ApplicationSources.Count;\n    public bool CanStart => !IsLoading && !IsCapturing;
+    public int SelectedApplicationCount => ApplicationSources.Count(source => source.IsSelected);
+    public int AvailableApplicationCount => ApplicationSources.Count;
+    public bool CanStart => !IsLoading && !IsCapturing;
 
     public ICommand RefreshCommand { get; }
     public ICommand StartCommand { get; }
@@ -112,7 +114,9 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
                 ApplicationSources.Add(item);
             }
 
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(AvailableApplicationCount)));\n            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SelectedApplicationCount)));\n            StatusMessage = $"Found {ApplicationSources.Count} applications. Choose what you want to share.";
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(AvailableApplicationCount)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SelectedApplicationCount)));
+            StatusMessage = $"Found {ApplicationSources.Count} applications. Choose what you want to share.";
         }
         catch (Exception exception)
         {
