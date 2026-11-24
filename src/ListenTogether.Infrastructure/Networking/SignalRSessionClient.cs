@@ -66,6 +66,7 @@ public sealed class SignalRSessionClient : IAsyncDisposable
     public event Action<PeerCandidateMessage>? PeerCandidateReceived;
     public event Action<PeerKeyOfferMessage>? PeerKeyOfferReceived;
     public event Action<PeerKeyProofMessage>? PeerKeyProofReceived;
+    public event Action<SessionJoinResult>? SessionJoined;
     public event Action<string>? SessionEnded;
     public event Action<Exception?>? ConnectionClosed;
 
@@ -112,6 +113,7 @@ public sealed class SignalRSessionClient : IAsyncDisposable
         _sessionId = result.Invitation.SessionId;
         ConnectionId = await _connection.InvokeAsync<string>("GetConnectionId", cancellationToken).ConfigureAwait(false);
         _isHost = false;
+        SessionJoined?.Invoke(result);
         return result;
     }
 
