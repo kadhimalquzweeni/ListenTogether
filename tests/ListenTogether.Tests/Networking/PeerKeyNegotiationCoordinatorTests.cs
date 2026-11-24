@@ -46,6 +46,34 @@ public sealed class PeerKeyNegotiationCoordinatorTests
     }
 
     [Fact]
+    public async Task SessionJoinedAndParticipantJoined_StartNegotiationAutomatically()
+    {
+        var network = new InMemoryPeerNetwork(SessionId);
+        var hostSignalling = network.AddPeer("host");
+        var listenerSignalling = network.AddPeer("listener");
+        using var host = new PeerKeyNegotiationCoordinator(hostSignalling);
+        using var listener = new PeerKeyNegotiationCoordinator(listenerSignalling);
+        var secured = NewSignal();
+
+        host.PeerSecured += (_, _) => secured.TrySetResult();
+        listener.PeerSecured += (_, _) => secured.TrySetResult();
+
+        hostSignalling.RaiseParticipantJoined(new SessionParticipant("Listener", false, "listener"));
+        listenerSignalling.RaiseSessionJoined(new SessionJoinResult(
+            new SessionInvitation("ABC12345", null, SessionId),
+            "Host",
+            [
+                new SessionParticipant("Host", true, "host"),
+                new SessionParticipant("Listener", false, "listener")
+            ],
+            new SessionParticipant("Listener", false, "listener")));
+
+        await secured.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Contains("listener", host.SecuredPeers);
+        Assert.Contains("host", listener.SecuredPeers);
+    }
+
+    [Fact]
     public async Task BeginPeersAsync_EachListenerGetsIndependentHostKeys()
     {
         var network = new InMemoryPeerNetwork(SessionId);
@@ -241,5 +269,7 @@ public sealed class PeerKeyNegotiationCoordinatorTests
         public void RaiseOffer(PeerKeyOfferMessage message) => PeerKeyOfferReceived?.Invoke(message);
         public void RaiseProof(PeerKeyProofMessage message) => PeerKeyProofReceived?.Invoke(message);
         public void RaiseParticipantLeft(SessionParticipant participant) => ParticipantLeft?.Invoke(participant);
+        public void RaiseParticipantJoined(SessionParticipant participant) => ParticipantJoined?.Invoke(participant);
+        public void RaiseSessionJoined(SessionJoinResult result) => SessionJoined?.Invoke(result);
     }
 }
