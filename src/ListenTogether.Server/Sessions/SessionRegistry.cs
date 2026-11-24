@@ -56,7 +56,7 @@ public sealed class SessionRegistry
             if (session.Participants.Count >= MaximumParticipants)
                 throw new InvalidOperationException("This session has reached its participant limit.");
 
-            var participant = new SessionParticipant(displayName, false);
+            var participant = new SessionParticipant(displayName, false, connectionId);
             session.Participants.Add(connectionId, participant);
             _connectionSessions.Add(connectionId, code);
 
@@ -211,7 +211,7 @@ public sealed class SessionRegistry
         public string HostConnectionId { get; } = hostConnectionId;
         public string HostDisplayName { get; } = hostDisplayName;
         public Dictionary<string, SessionParticipant> Participants { get; } =
-            new(StringComparer.Ordinal) { [hostConnectionId] = new SessionParticipant(hostDisplayName, true) };
+            new(StringComparer.Ordinal) { [hostConnectionId] = new SessionParticipant(hostDisplayName, true, hostConnectionId) };
         public long LastSequence { get; set; } = -1;
         public long LastPacketTimestamp { get; set; }
     }
