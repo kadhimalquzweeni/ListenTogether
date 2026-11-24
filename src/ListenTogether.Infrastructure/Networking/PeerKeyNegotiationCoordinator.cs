@@ -206,8 +206,8 @@ public sealed class PeerKeyNegotiationCoordinator : IDisposable
     private void OnParticipantLeft(SessionParticipant participant)
     {
         // Connection IDs are supplied by the hub's peer departure notification.
-        if (participant is SessionParticipantWithConnectionId identified)
-            RemovePeer(identified.ConnectionId);
+        if (!string.IsNullOrWhiteSpace(participant.ConnectionId))
+            RemovePeer(participant.ConnectionId);
     }
 
     private void OnSessionEnded(string _) => ClearPeers();
