@@ -13,7 +13,7 @@ using Microsoft.AspNetCore.Hosting.Server.Features;
 
 namespace ListenTogether.Tests.Sessions;
 
-public sealed class SignalRRelayIntegrationTests
+public sealed class SignalRSignallingIntegrationTests
 {
     [Fact]
     public async Task HostAndListener_CanCreateAndJoinASignallingSession()
