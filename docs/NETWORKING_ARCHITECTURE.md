@@ -18,7 +18,9 @@ The authenticated header contains the LTUD magic value, protocol version, packet
 
 Receivers enforce a 64-packet sliding replay window. Authentication must succeed before a sequence is committed to the replay window. Datagrams larger than 1,200 bytes, malformed headers, wrong sessions, wrong nonce prefixes, invalid packet types, authentication failures and duplicate/too-old sequences are discarded.
 
-**Key management requirement:** the codec does not invent or distribute keys. The signalling/control plane must authenticate participants and establish distinct directional keys before enabling this transport. Never send a media key in plaintext or reuse one key/prefix pair in both directions. The key agreement and authenticated peer binding are a separate milestone; until that exists, the desktop client must continue using the existing SignalR audio path.
+**Key agreement foundation implemented:** `PeerKeyAgreement` creates ephemeral P-256 ECDH key pairs, exchanges public-key offers bound to a session and the two SignalR connection IDs, hashes a canonical transcript, and derives a confirmation key plus independent directional AES-256-GCM keys and nonce prefixes using HKDF-SHA256. Each side emits a transcript-bound HMAC proof; both sides must verify the other proof before constructing packet codecs. Key material is held in disposable result objects and zeroed on disposal.
+
+**Integration and trust requirements:** this primitive is not yet wired into the SignalR hub/client lifecycle or UDP transport. Its HMAC is key confirmation, not identity authentication: a malicious signalling server could substitute both public keys. Current trust is therefore the TLS-protected signalling service and its session membership checks. Do not enable direct UDP media until the offer/confirmation exchange is integrated, server-side session/peer binding is enforced, both proofs are verified, and the client falls back safely to SignalR. For protection against a malicious signalling service, add an independently verifiable peer identity or user-verified fingerprint.
 
 ## Deployment constraint
 
