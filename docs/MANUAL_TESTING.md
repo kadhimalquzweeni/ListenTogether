@@ -6,7 +6,7 @@ This guide covers the direct-only media implementation. SignalR is used for sign
 
 After a successful Windows CI run, open the repository's **Actions** tab, select the latest successful `.NET` workflow for this feature branch, and download the `ListenTogether-win-x64` artifact. Extract it and run `ListenTogether.App.exe`.
 
-The same workflow also publishes a `ListenTogether-Relay-win-x64` artifact if you want to run the relay outside Docker. Artifacts are retained by GitHub Actions for 14 days.
+The same workflow also publishes a `ListenTogether-Relay-win-x64` artifact if you want to run the signalling/STUN server outside Docker. Artifacts are retained by GitHub Actions for 14 days.
 
 ## 2. Build and start the development server
 
@@ -50,7 +50,7 @@ The host sends Opus frames only over authenticated direct UDP paths. Listeners w
 
 For clients on different networks, the signalling server and STUN service must be publicly reachable.
 
-The supplied production Compose setup expects a DNS name and Caddy-managed HTTPS. It publishes UDP 3478 directly to the relay container. The public server firewall must allow TCP 80/443 and UDP 3478. Clients do not need inbound router rules or port forwarding.
+The supplied production Compose setup expects a DNS name and Caddy-managed HTTPS. It publishes UDP 3478 directly to the signalling/STUN server container. The public server firewall must allow TCP 80/443 and UDP 3478. Clients do not need inbound router rules or port forwarding.
 
 A home PC behind a typical NAT is not a publicly reachable server just because Docker is running. Without router forwarding, a tunnel, or a public hosting endpoint, remote clients will not be able to reach a server running only on that home PC. The direct UDP peer path does not remove this server reachability requirement.
 
