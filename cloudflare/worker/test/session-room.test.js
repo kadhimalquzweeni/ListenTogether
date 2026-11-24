@@ -137,10 +137,10 @@ test("host leaving ends the room for every participant", async () => {
   host.takeMessages();
   listener.takeMessages();
 
-  await invoke(room, host, "LeaveSession", []);
+  const hostMessages = await invoke(room, host, "LeaveSession", []);
   assert.equal(host.deserializeAttachment().code, null);
   assert.equal(listener.deserializeAttachment().code, null);
-  assert.equal(host.takeMessages().some(message => message.target === "SessionEnded"), true);
+  assert.equal(hostMessages.some(message => message.target === "SessionEnded"), true);
   assert.equal(listener.takeMessages()[0].target, "SessionEnded");
 });
 
