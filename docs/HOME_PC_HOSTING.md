@@ -35,13 +35,15 @@ Reserve a fixed LAN address for the server PC in your router. Forward these port
 
 Do not forward TCP 5000. It is deliberately loopback-only.
 
-## 3. Configure Windows Firewall
+## 3. Run the guided setup script
 
-Open PowerShell as Administrator in the repository root:
+Open PowerShell as Administrator in the repository root and run:
 
-    .\scripts\home-server\Configure-Firewall.ps1
+    .\scripts\home-server\Setup-ListenTogether.ps1
 
-This creates inbound rules for TCP 80/443 and UDP 3478. It does not configure the router.
+This creates inbound Windows Firewall rules for TCP 80/443 and UDP 3478, detects the PC's LAN IPv4 addresses, and prints the exact router forwarding table. Reserve the selected LAN address in your router's DHCP settings so it does not change.
+
+The script deliberately does not attempt to log in to or modify your router: router interfaces and APIs vary, and guessing could change unrelated settings. You must add the three forwarding rules shown by the script.
 
 ## 4. Start the server
 
@@ -64,13 +66,23 @@ Check locally:
 - https://YOUR_PUBLIC_IP/healthz should return healthy after Caddy obtains its certificate.
 - Set the desktop app's server URL to the detected `https://YOUR_PUBLIC_IP` address. The launcher saves the detected address in the file above for the host PC.
 
-## 5. Share an invite with your friend
+## 5. Verify router configuration from your friend's network
+
+After the host has started the server, copy the public IPv4 address and send it to your friend. Have them connect their PC to a different internet connection (for example, a mobile hotspot), open PowerShell, and run the diagnostic script from a copy of the repository:
+
+    .\scripts\home-server\Test-HomeServer.ps1 -Server "YOUR_PUBLIC_IP"
+
+The diagnostic tests TCP 80, TCP 443, and an actual STUN Binding request over UDP 3478. It reports each result separately. For every failure, it prints the corresponding router forwarding rule and host-side checks to investigate. It exits with code 1 if any required endpoint is unreachable, making it suitable for troubleshooting or automation.
+
+Run this test from outside the host's home network. Some routers do not support NAT loopback, so testing your own public IP from your home Wi-Fi can report false failures. A TCP port check cannot prove UDP forwarding; the STUN request tests UDP 3478 specifically.
+
+## 6. Share an invite with your friend
 
 Start a session in the desktop app. Use **Copy invite details** in the audio-sharing window to copy the server address and eight-character invite code together. Send that text to your friend. On their desktop app, they select **Paste invite details**; ListenTogether fills in the server address and invite code. They then select **Join session**.
 
 The server address is not a secret. Treat the invite code as a private bearer credential and only share it with the intended listener.
 
-## 6. Test STUN from outside your home network
+## 7. Test STUN directly (optional)
 
 Run this from a second PC connected to a different network (for example, a laptop on a mobile hotspot), with the repository script available:
 
@@ -85,9 +97,9 @@ A successful result prints the public UDP IP:port mapping observed by STUN. Runn
 | Public IP detection fails | Check internet access and whether both IP discovery services are reachable. |
 | The two IP services disagree | The launcher intentionally stops; retry later rather than issuing a certificate for an uncertain address. |
 | Local health check fails | Server process failed, wrong publish path, or port 5000 is occupied. Check the server console and Windows Event Viewer. |
-| Local health works, public HTTPS fails | Check router TCP 80/443 forwarding, Windows Firewall, Caddy logs, and whether another program uses ports 80/443. |
+| Local health works, public HTTPS fails | Run Test-HomeServer.ps1 from your friend's network. If TCP 80 or 443 fails, check the exact forwarding rule it reports, Windows Firewall, Caddy logs, and whether another program uses ports 80/443. |
 | Caddy cannot obtain a certificate | Public IP must be reachable on TCP 80 from the internet. Check ISP inbound-port restrictions and Caddy logs. |
-| HTTPS works but STUN test times out | Check server is listening on UDP 3478, Windows Firewall, router UDP forwarding, and upstream NAT. TCP port tests do not test UDP. |
+| HTTPS works but STUN test times out | Run Test-HomeServer.ps1 from your friend's network. Check its UDP 3478 result, the server listener, Windows Firewall and router UDP forwarding. TCP port tests do not test UDP. |
 | STUN works but peers cannot connect | STUN only discovers public mappings. Symmetric NAT, VPNs, enterprise firewalls, or restrictive UDP policies can still prevent hole punching. |
 | Works on LAN but not mobile data | Public port forwarding, firewall, or upstream NAT issue is likely. Do not use the LAN IP in your friend's server URL. |
 
