@@ -1,5 +1,7 @@
 using ListenTogether.Core.Sessions;
 using ListenTogether.Infrastructure.Networking;
+using ListenTogether.Infrastructure.Audio;
+using ListenTogether.Core.Audio;
 using ListenTogether.Server.Hubs;
 using ListenTogether.Server.Sessions;
 using Microsoft.AspNetCore.Builder;
@@ -58,12 +60,20 @@ public sealed class SignalRRelayIntegrationTests
         var participant = await participantJoined.Task.WaitAsync(TimeSpan.FromSeconds(5));
         Assert.Equal("Listener", participant.DisplayName);
 
-        var opusPacket = new byte[] { 0xF8, 0xFF, 0xFE, 0x01, 0x02 };
+        using var encoder = new OpusAudioEncoder();
+        var opusPacket = Assert.Single(encoder.Encode(new AudioFrame(
+            new float[OpusAudioEncoder.FrameSamplesPerChannel * AudioFormat.Broadcast.Channels],
+            AudioFormat.Broadcast,
+            DateTimeOffset.UtcNow)));
         await host.SendAudioPacketAsync(opusPacket, 1);
 
         var received = await receivedPacket.Task.WaitAsync(TimeSpan.FromSeconds(5));
         Assert.Equal(opusPacket, received.Packet);
         Assert.Equal(1, received.Sequence);
+
+        using var decoder = new OpusAudioDecoder();
+        var decodedFrame = decoder.Decode(received.Packet);
+        Assert.Equal(OpusAudioEncoder.FrameSamplesPerChannel, decodedFrame.FrameCount);
 
         await host.LeaveSessionAsync();
         var reason = await sessionEnded.Task.WaitAsync(TimeSpan.FromSeconds(5));
@@ -97,4 +107,5 @@ public sealed class SignalRRelayIntegrationTests
 
         await Assert.ThrowsAsync<HubException>(() =>
             listener.InvokeAsync("SendAudioPacket", new byte[] { 1, 2, 3 }, 1));
-    }}
+    }
+}
