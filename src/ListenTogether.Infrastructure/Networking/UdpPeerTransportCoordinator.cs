@@ -15,8 +15,8 @@ namespace ListenTogether.Infrastructure.Networking;
 public sealed class UdpPeerTransportCoordinator : IAsyncDisposable
 {
     private const int ConnectivityChallengeLength = 16;
-    private const int KeepAliveIntervalMilliseconds = 10_000;
-    private static readonly TimeSpan PeerTimeout = TimeSpan.FromSeconds(30);
+    private const int KeepAliveIntervalMilliseconds = 5_000;
+    private static readonly TimeSpan PeerTimeout = TimeSpan.FromSeconds(15);
     private readonly UdpPeerCandidateCoordinator _candidates;
     private readonly PeerKeyNegotiationCoordinator _keyNegotiation;
     private readonly Guid _sessionId;
