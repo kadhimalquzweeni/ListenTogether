@@ -32,6 +32,7 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
     private string _statusMessage = "Choose system audio or select one or more applications.";
     private string _sessionCode = string.Empty;
     private double _outputLevel;
+    private int _participantCount;
     private long _packetSequence;
 
     public AudioSourceViewModel(
@@ -112,6 +113,12 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
         private set => SetProperty(ref _sessionCode, value);
     }
 
+    public int ParticipantCount
+    {
+        get => _participantCount;
+        private set => SetProperty(ref _participantCount, value);
+    }
+
     public double OutputLevel
     {
         get => _outputLevel;
@@ -180,8 +187,11 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
             _sessionClient = _sessionClientFactory.Create(_serverUri);
             _sessionClient.ConnectionClosed += OnConnectionClosed;
             _sessionClient.ParticipantJoined += OnParticipantJoined;
+            _sessionClient.ParticipantLeft += OnParticipantLeft;
+            _sessionClient.SessionEnded += OnSessionEnded;
             var invitation = await _sessionClient.CreateSessionAsync(_displayName);
             SessionCode = invitation.Code;
+            ParticipantCount = 1;
 
             _encoder = new OpusAudioEncoder();
             _packetChannel = Channel.CreateBounded<EncodedAudioPacket>(new BoundedChannelOptions(100)
@@ -236,6 +246,7 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
             IsCapturing = false;
             OutputLevel = 0;
             SessionCode = string.Empty;
+            ParticipantCount = 0;
             StatusMessage = "Session ended. Your audio is no longer being shared.";
         }
         catch (Exception exception)
@@ -357,7 +368,26 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
             : $"Disconnected from the relay: {exception.Message}");
 
     private void OnParticipantJoined(SessionParticipant participant)
-        => NotifyOnUi(() => StatusMessage = $"{participant.DisplayName} joined your session.");
+        => NotifyOnUi(() =>
+        {
+            ParticipantCount++;
+            StatusMessage = $"{participant.DisplayName} joined your session.";
+        });
+
+    private void OnParticipantLeft(SessionParticipant participant)
+        => NotifyOnUi(() =>
+        {
+            ParticipantCount = Math.Max(1, ParticipantCount - 1);
+            StatusMessage = $"{participant.DisplayName} left your session.";
+        });
+
+    private void OnSessionEnded(string reason)
+        => NotifyOnUi(() =>
+        {
+            IsCapturing = false;
+            ParticipantCount = 0;
+            StatusMessage = reason;
+        });
 
     private void NotifyOnUi(Action action)
     {
@@ -409,6 +439,8 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
         {
             _sessionClient.ConnectionClosed -= OnConnectionClosed;
             _sessionClient.ParticipantJoined -= OnParticipantJoined;
+            _sessionClient.ParticipantLeft -= OnParticipantLeft;
+            _sessionClient.SessionEnded -= OnSessionEnded;
             await _sessionClient.DisposeAsync();
             _sessionClient = null;
         }

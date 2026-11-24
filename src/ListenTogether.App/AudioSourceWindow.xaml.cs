@@ -30,6 +30,12 @@ public partial class AudioSourceWindow : Window
 
     private void OnCloseClick(object sender, RoutedEventArgs e) => Close();
 
+    private void OnCopyCodeClick(object sender, RoutedEventArgs e)
+    {
+        if (!string.IsNullOrWhiteSpace(_viewModel.SessionCode))
+            Clipboard.SetText(_viewModel.SessionCode);
+    }
+
     private async void OnClosed(object? sender, EventArgs e)
     {
         await _viewModel.DisposeAsync();
