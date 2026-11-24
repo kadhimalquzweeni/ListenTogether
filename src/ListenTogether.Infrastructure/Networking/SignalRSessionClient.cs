@@ -10,7 +10,7 @@ namespace ListenTogether.Infrastructure.Networking;
 /// SignalR currently carries session events and relayed Opus packets; peer
 /// candidate exchange prepares sessions for direct UDP transport.
 /// </summary>
-public sealed class SignalRSessionClient : IAsyncDisposable
+public sealed class SignalRSessionClient : IAsyncDisposable, IPeerKeySignalling
 {
     private readonly HubConnection _connection;
     private string? _sessionCode;
