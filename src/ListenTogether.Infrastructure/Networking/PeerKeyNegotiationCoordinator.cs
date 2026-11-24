@@ -10,11 +10,11 @@ namespace ListenTogether.Infrastructure.Networking;
 /// </summary>
 public sealed class PeerKeyNegotiationCoordinator : IDisposable
 {
-    private readonly SignalRSessionClient _session;
+    private readonly IPeerKeySignalling _session;
     private readonly ConcurrentDictionary<string, PeerState> _peers = new(StringComparer.Ordinal);
     private bool _disposed;
 
-    public PeerKeyNegotiationCoordinator(SignalRSessionClient session)
+    public PeerKeyNegotiationCoordinator(IPeerKeySignalling session)
     {
         _session = session ?? throw new ArgumentNullException(nameof(session));
         _session.PeerKeyOfferReceived += OnPeerKeyOfferReceived;
@@ -133,10 +133,16 @@ public sealed class PeerKeyNegotiationCoordinator : IDisposable
 
             if (proof is not null && transcriptHash is not null)
             {
-                await _session.PublishPeerKeyProofAsync(
-                    message.PeerConnectionId, transcriptHash, proof).ConfigureAwait(false);
-                CryptographicOperations.ZeroMemory(proof);
-                CryptographicOperations.ZeroMemory(transcriptHash);
+                try
+                {
+                    await _session.PublishPeerKeyProofAsync(
+                        message.PeerConnectionId, transcriptHash, proof).ConfigureAwait(false);
+                }
+                finally
+                {
+                    CryptographicOperations.ZeroMemory(proof);
+                    CryptographicOperations.ZeroMemory(transcriptHash);
+                }
             }
 
             TryCompletePeer(message.PeerConnectionId, state);
@@ -160,8 +166,7 @@ public sealed class PeerKeyNegotiationCoordinator : IDisposable
                 message.Proof is null || message.Proof.Length != 32)
                 return;
 
-            if (!_peers.TryGetValue(message.FromConnectionId, out var state))
-                return;
+            var state = GetOrCreatePeer(message.FromConnectionId);
 
             lock (state.Sync)
             {
@@ -183,6 +188,7 @@ public sealed class PeerKeyNegotiationCoordinator : IDisposable
     private void VerifyAndComplete(string peerId, PeerState state, PeerKeyProofMessage message)
     {
         PeerKeyAgreementResult? result;
+        var invalid = false;
         lock (state.Sync)
         {
             result = state.Result;
@@ -192,15 +198,29 @@ public sealed class PeerKeyNegotiationCoordinator : IDisposable
             if (!CryptographicOperations.FixedTimeEquals(result.TranscriptHash, message.TranscriptHash) ||
                 !result.VerifyPeerProof(message.Proof))
             {
-                // Invalid proof permanently invalidates this negotiation.
-                RemovePeer(peerId);
-                return;
+                invalid = true;
             }
-
-            state.IsSecured = true;
+            else
+            {
+                state.IsSecured = true;
+            }
         }
 
-        PeerSecured?.Invoke(peerId, result);
+        if (invalid)
+        {
+            RemovePeer(peerId);
+            return;
+        }
+
+        // A UI or media subscriber must not break signalling callback processing.
+        var handlers = PeerSecured;
+        if (handlers is null)
+            return;
+        foreach (Action<string, PeerKeyAgreementResult> handler in handlers.GetInvocationList())
+        {
+            try { handler(peerId, result!); }
+            catch (Exception) { /* Isolate subscriber failures from protocol state. */ }
+        }
     }
 
     private void TryCompletePeer(string peerId, PeerState state)
