@@ -59,9 +59,9 @@ Set the relay URL to `http://localhost:5000`, enter a display name, create a ses
 
 Both clients must use the same reachable signalling URL. For local development, this can be a LAN address. For real users on arbitrary networks, the public signalling and relay services must be deployed separately with HTTPS/WSS and public UDP reachability.
 
-## Networking roadmap
+## Networking and testing
 
-See [Networking architecture](docs/NETWORKING_ARCHITECTURE.md) for the target Parsec-inspired connection model, implementation status, and deployment requirements.
+See [Networking architecture](docs/NETWORKING_ARCHITECTURE.md) for the connection model and [Manual testing](docs/MANUAL_TESTING.md) for LAN, multi-listener and internet test steps. Deployment requirements are covered in [Relay deployment](docs/DEPLOYMENT.md).
 
 ## Important behaviour and limitations
 
