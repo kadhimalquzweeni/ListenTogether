@@ -244,7 +244,7 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
 
                 await _captureSession.StartAsync();
                 if (_sessionClient is not { IsConnected: true } || _sessionClient.SessionCode is null)
-                    throw new InvalidOperationException("The relay connection was lost while audio capture was starting.");
+                    throw new InvalidOperationException("The signalling connection was lost while audio capture was starting.");
 
                 foreach (var item in selectedItems)
                     _captureSession.SetGain(item.Source.Id, item.EffectiveGain);
