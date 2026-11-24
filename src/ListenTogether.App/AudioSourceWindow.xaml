@@ -1,12 +1,12 @@
 <Window x:Class="ListenTogether.App.AudioSourceWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"\n        xmlns:local="clr-namespace:ListenTogether.App"
         Title="Choose audio sources — ListenTogether"
         Width="960" Height="760" MinWidth="820" MinHeight="640"
         WindowStartupLocation="CenterOwner"
         Background="{StaticResource WindowBackgroundBrush}"
         Foreground="{StaticResource TextPrimaryBrush}">
-    <Window.Resources>
+    <Window.Resources>\n        <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />\n        <local:InverseBooleanConverter x:Key="InverseBooleanConverter" />
         <Style x:Key="ModeRadio" TargetType="RadioButton">
             <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
             <Setter Property="FontSize" Value="14" />
@@ -152,10 +152,10 @@
             </Grid.ColumnDefinitions>
             <RadioButton Grid.Column="0" GroupName="SourceMode" Style="{StaticResource ModeRadio}"
                          Content="All system audio" Tag="Everything played through your default output device."
-                         IsChecked="{Binding IsSystemAudioMode}" IsEnabled="{Binding IsCapturing, Converter={x:Static BooleanBoxes.Inverse}}" />
+                         IsChecked="{Binding IsSystemAudioMode}" IsEnabled="{Binding IsCapturing, Converter={StaticResource InverseBooleanConverter}}" />
             <RadioButton Grid.Column="2" GroupName="SourceMode" Style="{StaticResource ModeRadio}"
                          Content="Selected applications" Tag="Choose multiple apps and control each one separately."
-                         IsChecked="{Binding IsApplicationMode}" IsEnabled="{Binding IsCapturing, Converter={x:Static BooleanBoxes.Inverse}}" />
+                         IsChecked="{Binding IsSystemAudioMode, Converter={StaticResource InverseBooleanConverter}}" IsEnabled="{Binding IsCapturing, Converter={StaticResource InverseBooleanConverter}}" />
         </Grid>
 
         <Border Grid.Row="2" Background="{StaticResource PanelBackgroundBrush}" BorderBrush="#303541"
@@ -168,7 +168,7 @@
 
                 <Grid Grid.Row="0" Margin="0,0,0,14">
                     <StackPanel>
-                        <TextBlock Text="{Binding SelectedApplicationCount, StringFormat={}{0} applications available}"
+                        <TextBlock Text="{Binding AvailableApplicationCount, StringFormat={}{0} applications available}"
                                    FontSize="15" FontWeight="SemiBold" />
                         <TextBlock Text="Select the applications to include in the shared mix."
                                    Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" Margin="0,5,0,0" />
@@ -264,7 +264,7 @@
             <Button Grid.Column="1" Content="Stop capture" Command="{Binding StopCommand}"
                     Style="{StaticResource SecondaryButton}" IsEnabled="{Binding IsCapturing}" />
             <Button Grid.Column="3" Content="Start capture" Command="{Binding StartCommand}"
-                    Style="{StaticResource PrimaryButton}" IsEnabled="{Binding IsLoading, Converter={x:Static BooleanBoxes.Inverse}}" />
+                    Style="{StaticResource PrimaryButton}" IsEnabled="{Binding CanStart}" />
         </Grid>
     </Grid>
 </Window>

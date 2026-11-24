@@ -26,7 +26,7 @@ public partial class AudioSourceWindow : Window
         await _viewModel.RefreshAsync();
     }
 
-    private async void OnClosed(object? sender, EventArgs e)
+    private void OnCloseClick(object sender, RoutedEventArgs e) => Close();\n\n    private async void OnClosed(object? sender, EventArgs e)
     {
         await _viewModel.DisposeAsync();
     }

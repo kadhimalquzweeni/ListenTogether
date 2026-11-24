@@ -84,7 +84,7 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
         private set => SetProperty(ref _outputLevel, Math.Clamp(value, 0, 100));
     }
 
-    public int SelectedApplicationCount => ApplicationSources.Count(source => source.IsSelected);
+    public int SelectedApplicationCount => ApplicationSources.Count(source => source.IsSelected);\n    public int AvailableApplicationCount => ApplicationSources.Count;\n    public bool CanStart => !IsLoading && !IsCapturing;
 
     public ICommand RefreshCommand { get; }
     public ICommand StartCommand { get; }
