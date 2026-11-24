@@ -38,7 +38,8 @@ public sealed class UdpPeerTransportCoordinatorTests
         await using var listenerTransport = new UdpPeerTransportCoordinator(listenerCandidates, listenerKeys, SessionId);
         var hostConnected = NewSignal();
         var listenerConnected = NewSignal();
-        var receivedAudio = new TaskCompletionSource<byte[]>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var receivedAudio = new TaskCompletionSource<(byte[] Payload, ulong Sequence)>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
 
         hostTransport.PeerConnected += (peer, _) =>
         {
@@ -53,7 +54,7 @@ public sealed class UdpPeerTransportCoordinatorTests
         listenerTransport.AudioPacketReceived += (peer, payload, _) =>
         {
             if (peer == "host")
-                receivedAudio.TrySetResult(payload);
+                receivedAudio.TrySetResult((payload, sequence));
         };
 
         await Task.WhenAll(hostTransport.StartAsync(), listenerTransport.StartAsync());
@@ -62,10 +63,12 @@ public sealed class UdpPeerTransportCoordinatorTests
             listenerConnected.Task.WaitAsync(TimeSpan.FromSeconds(5)));
 
         var opusPayload = new byte[] { 0xF8, 0xFF, 0xFE, 0x10, 0x20, 0x30 };
-        var directRecipients = await hostTransport.SendAudioToConnectedPeersAsync(opusPayload);
+        var directRecipients = await hostTransport.SendAudioToConnectedPeersAsync(opusPayload, 42);
 
         Assert.Contains("listener", directRecipients);
-        Assert.Equal(opusPayload, await receivedAudio.Task.WaitAsync(TimeSpan.FromSeconds(5)));
+        var received = await receivedAudio.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(opusPayload, received.Payload);
+        Assert.Equal(42UL, received.Sequence);
         Assert.Contains("listener", hostTransport.ConnectedPeers);
         Assert.Contains("host", listenerTransport.ConnectedPeers);
     }
@@ -93,7 +96,7 @@ public sealed class UdpPeerTransportCoordinatorTests
         await hostTransport.StartAsync();
 
         var oversized = new byte[UdpSecurePacketCodec.MaximumDatagramSize];
-        Assert.Empty(await hostTransport.SendAudioToConnectedPeersAsync(oversized));
+        Assert.Empty(await hostTransport.SendAudioToConnectedPeersAsync(oversized, 1));
     }
 
     private static TaskCompletionSource NewSignal() =>
