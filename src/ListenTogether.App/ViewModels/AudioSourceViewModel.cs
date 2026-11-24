@@ -23,6 +23,7 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
     private AudioCaptureMixerSession? _captureSession;
     private SignalRSessionClient? _sessionClient;
     private PeerKeyNegotiationCoordinator? _peerNegotiation;
+    private UdpPeerCandidateCoordinator? _peerCandidates;
     private OpusAudioEncoder? _encoder;
     private Channel<EncodedAudioPacket>? _packetChannel;
     private CancellationTokenSource? _streamCancellation;
@@ -204,12 +205,23 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
                 _sessionClient.ConnectionClosed += OnConnectionClosed;
                 _peerNegotiation = new PeerKeyNegotiationCoordinator(_sessionClient);
                 _peerNegotiation.PeerSecured += OnPeerSecured;
+                _peerCandidates = new UdpPeerCandidateCoordinator(_sessionClient);
                 _sessionClient.ParticipantJoined += OnParticipantJoined;
                 _sessionClient.ParticipantLeft += OnParticipantLeft;
                 _sessionClient.SessionEnded += OnSessionEnded;
 
                 var invitation = await _sessionClient.CreateSessionAsync(_displayName);
                 SessionCode = invitation.Code;
+                try
+                {
+                    await _peerCandidates.StartAsync(_serverUri, stunTimeout: TimeSpan.FromSeconds(2));
+                }
+                catch (Exception exception)
+                {
+                    _peerCandidates.Dispose();
+                    _peerCandidates = null;
+                    StatusMessage = $"UDP discovery unavailable; audio will use the SignalR relay. {exception.Message}";
+                }
                 ParticipantCount = 1;
 
                 _encoder = new OpusAudioEncoder();
@@ -240,7 +252,9 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
                     _captureSession.SetGain(item.Source.Id, item.EffectiveGain);
 
                 IsCapturing = true;
-                StatusMessage = $"Sharing audio. Invite code: {SessionCode}";
+                StatusMessage = _peerCandidates is null
+                    ? $"Sharing audio. Invite code: {SessionCode} (relay mode)."
+                    : $"Sharing audio. Invite code: {SessionCode}. UDP candidates exchanged; audio remains relayed.";
             }
             catch (Exception exception)
             {
@@ -505,6 +519,9 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
 
         _encoder?.Dispose();
         _encoder = null;
+
+        _peerCandidates?.Dispose();
+        _peerCandidates = null;
 
         _peerNegotiation?.Dispose();
         _peerNegotiation = null;
