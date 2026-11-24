@@ -1,6 +1,6 @@
 # Host ListenTogether on a Windows home PC
 
-This guide runs the signalling service and self-hosted STUN service on your Windows PC for a private setup between you and a friend. The launcher detects your public IPv4 address each time it starts. Caddy provides HTTPS using a publicly trusted, short-lived Let's Encrypt certificate for that IP. Audio should travel directly between the two PCs over encrypted UDP; the home server handles signalling and STUN, not the audio stream.
+This guide runs the signalling service and self-hosted STUN service on your Windows PC for a private setup between you and a friend. The launcher detects your public IPv4 address each time it starts. Caddy provides HTTPS using a publicly trusted, short-lived Let's Encrypt certificate for that IP. The application attempts encrypted direct UDP audio; note that the current codebase still includes SignalR relay fallback, which must be removed separately to achieve the intended direct-only behaviour.
 
 > This makes your PC a public internet server. Keep Windows updated, use a strong account password, do not expose the development HTTP endpoint, and only forward the ports listed below. Your PC must remain powered on and connected to the internet.
 
