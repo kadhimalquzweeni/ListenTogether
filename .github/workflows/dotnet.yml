@@ -23,6 +23,18 @@ jobs:
         run: dotnet test ListenTogether.sln --configuration Release --no-build --no-restore
       - name: Publish Windows desktop app
         run: dotnet publish src/ListenTogether.App/ListenTogether.App.csproj --configuration Release --runtime win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true --output artifacts/publish
+      - name: Package Windows desktop app
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force artifacts/release | Out-Null
+          Compress-Archive -Path artifacts/publish/* -DestinationPath artifacts/release/ListenTogether-win-x64.zip -Force
+      - name: Upload Windows desktop package
+        uses: actions/upload-artifact@v4
+        with:
+          name: ListenTogether-win-x64
+          path: artifacts/release/ListenTogether-win-x64.zip
+          if-no-files-found: error
+          retention-days: 14
 
   container:
     runs-on: ubuntu-latest
