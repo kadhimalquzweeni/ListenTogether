@@ -113,15 +113,35 @@ public sealed class ListeningHub(SessionRegistry sessions) : Hub
             Context.ConnectionAborted);
     }
 
-    public async Task SendAudioPacket(byte[] packet, long sequence)
+    public async Task SendAudioPacket(
+        byte[] packet,
+        long sequence,
+        string[]? excludedConnectionIds = null)
     {
         if (packet is null || !sessions.TryAcceptAudioPacket(Context.ConnectionId, sequence, packet.Length))
             throw new HubException("This connection cannot publish that audio packet.");
 
+        if (excludedConnectionIds is { Length: > 15 } ||
+            excludedConnectionIds?.Any(string.IsNullOrWhiteSpace) == true ||
+            excludedConnectionIds is not null &&
+            excludedConnectionIds.Distinct(StringComparer.Ordinal).Count() != excludedConnectionIds.Length)
+            throw new HubException("The direct-peer exclusion list is invalid.");
+
         if (sessions.TryGetSessionCode(Context.ConnectionId, out var code))
         {
-            await Clients.OthersInGroup(code)
-                .SendAsync("ReceiveAudioPacket", packet, sequence, Context.ConnectionAborted);
+            if (excludedConnectionIds is { Length: > 0 })
+            {
+                var excluded = excludedConnectionIds
+                    .Append(Context.ConnectionId)
+                    .ToArray();
+                await Clients.GroupExcept(code, excluded)
+                    .SendAsync("ReceiveAudioPacket", packet, sequence, Context.ConnectionAborted);
+            }
+            else
+            {
+                await Clients.OthersInGroup(code)
+                    .SendAsync("ReceiveAudioPacket", packet, sequence, Context.ConnectionAborted);
+            }
         }
     }
 
