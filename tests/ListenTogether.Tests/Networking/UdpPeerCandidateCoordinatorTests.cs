@@ -45,6 +45,19 @@ public sealed class UdpPeerCandidateCoordinatorTests
     }
 
     [Fact]
+    public async Task StartAsync_RetriesTransientCandidatePublicationFailure()
+    {
+        var network = new FakeNetwork(SessionId);
+        var hostSignalling = network.AddPeer("host", publishFailures: 1);
+        using var host = new UdpPeerCandidateCoordinator(hostSignalling,
+            new FakeGatherer([new PeerCandidate("192.168.1.10", 51000, PeerCandidateType.Host)]));
+
+        await host.StartAsync(new Uri("http://127.0.0.1:5000"));
+
+        Assert.Equal(2, hostSignalling.PublishAttempts);
+        Assert.Single(host.LocalCandidates);
+    }
+    [Fact]
     public async Task ParticipantJoined_ExistingPeerRepublishesCandidates()
     {
         var network = new FakeNetwork(SessionId);
@@ -144,9 +157,9 @@ public sealed class UdpPeerCandidateCoordinatorTests
     {
         private readonly Dictionary<string, FakeSignalling> _peers = new(StringComparer.Ordinal);
 
-        public FakeSignalling AddPeer(string connectionId)
+        public FakeSignalling AddPeer(string connectionId, int publishFailures = 0)
         {
-            var peer = new FakeSignalling(this, sessionId, connectionId);
+            var peer = new FakeSignalling(this, sessionId, connectionId, publishFailures);
             _peers.Add(connectionId, peer);
             return peer;
         }
@@ -162,8 +175,11 @@ public sealed class UdpPeerCandidateCoordinatorTests
     private sealed class FakeSignalling(
         FakeNetwork network,
         Guid sessionId,
-        string connectionId) : IPeerKeySignalling
+        string connectionId,
+        int publishFailures = 0) : IPeerKeySignalling
     {
+        private int _remainingPublishFailures = publishFailures;
+        public int PublishAttempts { get; private set; }
         public Guid SessionId => sessionId;
         public string? ConnectionId => connectionId;
 
@@ -181,6 +197,12 @@ public sealed class UdpPeerCandidateCoordinatorTests
         public Task PublishPeerCandidateAsync(PeerCandidate candidate, CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            PublishAttempts++;
+            if (_remainingPublishFailures > 0)
+            {
+                _remainingPublishFailures--;
+                throw new IOException("Simulated transient signalling failure.");
+            }
             return network.BroadcastCandidateAsync(connectionId, candidate);
         }
 
