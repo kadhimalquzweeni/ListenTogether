@@ -29,7 +29,10 @@ public partial class MainWindow : Window
 
     private void OnJoinSessionRequested(object? sender, EventArgs e)
     {
-        if (DataContext is not MainViewModel viewModel || !viewModel.ValidateConnectionSettings().TryGetTarget(out var serverUri))
+        if (DataContext is not MainViewModel viewModel)
+            return;
+        var serverUri = viewModel.ValidateConnectionSettings();
+        if (serverUri is null)
             return;
 
         var window = new ListeningWindow(serverUri, viewModel.DisplayName, viewModel.SessionCode) { Owner = this };

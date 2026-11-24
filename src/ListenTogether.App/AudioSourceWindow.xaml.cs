@@ -14,7 +14,9 @@ public partial class AudioSourceWindow : Window
 
         _viewModel = new AudioSourceViewModel(
             new WindowsAudioSourceDiscovery(),
-            new WasapiAudioCaptureFactory(),\n            serverUri,\n            displayName);
+            new WasapiAudioCaptureFactory(),
+            serverUri,
+            displayName);
 
         DataContext = _viewModel;
         Loaded += OnLoaded;
