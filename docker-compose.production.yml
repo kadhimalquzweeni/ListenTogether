@@ -8,6 +8,7 @@ services:
       ASPNETCORE_ENVIRONMENT: Production
     expose:
       - "8080"
+      - "3478/udp"
     restart: unless-stopped
 
   caddy:

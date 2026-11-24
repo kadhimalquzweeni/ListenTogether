@@ -8,4 +8,5 @@ services:
       ASPNETCORE_ENVIRONMENT: Production
     ports:
       - "5000:8080"
+      - "3478:3478/udp"
     restart: unless-stopped

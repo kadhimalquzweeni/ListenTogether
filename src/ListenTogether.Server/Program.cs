@@ -1,5 +1,7 @@
+using System.Net;
 using System.Security.Cryptography.X509Certificates;
 using ListenTogether.Server.Hubs;
+using ListenTogether.Server.Networking;
 using ListenTogether.Server.Sessions;
 using Microsoft.AspNetCore.Server.Kestrel.Https;
 using Microsoft.Extensions.Hosting;
@@ -38,6 +40,13 @@ else
 }
 
 builder.Services.AddSingleton<SessionRegistry>();
+builder.Services.AddOptions<StunServerOptions>()
+    .Bind(builder.Configuration.GetSection("Hosting:Stun"))
+    .Validate(options => options.Port is > 0 and <= 65535, "STUN port must be between 1 and 65535.")
+    .Validate(options => IPAddress.TryParse(options.ListenAddress, out _),
+        "STUN listen address must be a valid IP address.")
+    .ValidateOnStart();
+builder.Services.AddHostedService<StunServerHostedService>();
 builder.Services.AddSignalR(options =>
 {
     options.MaximumReceiveMessageSize = 16 * 1024;
@@ -52,7 +61,13 @@ app.MapGet("/", () => Results.Ok(new
 {
     name = "ListenTogether relay",
     status = "ready",
-    protocol = "SignalR over WebSockets"
+    protocol = "SignalR over WebSockets",
+    stun = new
+    {
+        enabled = builder.Configuration.GetValue("Hosting:Stun:Enabled", true),
+        port = builder.Configuration.GetValue("Hosting:Stun:Port", 3478),
+        transport = "UDP"
+    }
 }));
 app.MapHub<ListeningHub>("/hubs/listening");
 app.Run();
