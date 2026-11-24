@@ -14,6 +14,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private string _displayName = Environment.UserName;
     private string _statusMessage = "Create a session to share your audio, or join a friend's session.";
     private bool _isCheckingHosting;
+    private string _hostingCheckResult = string.Empty;
+    private bool _canCopyHostingResult;
     private readonly UserSettingsStore _settingsStore;
     private readonly IHostReadinessChecker _hostReadinessChecker;
 
@@ -62,6 +64,18 @@ public sealed class MainViewModel : INotifyPropertyChanged
         private set => SetProperty(ref _statusMessage, value);
     }
 
+    public string HostingCheckResult
+    {
+        get => _hostingCheckResult;
+        private set => SetProperty(ref _hostingCheckResult, value);
+    }
+
+    public bool CanCopyHostingResult
+    {
+        get => _canCopyHostingResult;
+        private set => SetProperty(ref _canCopyHostingResult, value);
+    }
+
     public bool IsCheckingHosting
     {
         get => _isCheckingHosting;
@@ -93,10 +107,14 @@ public sealed class MainViewModel : INotifyPropertyChanged
         {
             var result = await _hostReadinessChecker.CheckAsync(serverUri);
             StatusMessage = (result.CanHost ? "READY TO HOST — " : "NOT READY TO HOST — ") + result.Message;
+            HostingCheckResult = result.CanHost ? string.Empty : StatusMessage;
+            CanCopyHostingResult = !result.CanHost;
         }
         catch (Exception exception)
         {
             StatusMessage = "HOST CHECK FAILED — " + exception.Message;
+            HostingCheckResult = StatusMessage;
+            CanCopyHostingResult = true;
         }
         finally
         {
