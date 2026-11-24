@@ -63,7 +63,8 @@ public sealed class SessionRegistry
             return new SessionJoinResult(
                 new SessionInvitation(code),
                 session.HostDisplayName,
-                Array.AsReadOnly(session.Participants.Values.ToArray()));
+                Array.AsReadOnly(session.Participants.Values.ToArray()),
+                participant);
         }
     }
 
@@ -149,10 +150,12 @@ public sealed class SessionRegistry
 
     private static string NormalizeCode(string code)
     {
-        if (string.IsNullOrWhiteSpace(code) || code.Length != 8)
-            throw new ArgumentException("Session codes must contain eight characters.", nameof(code));
+        if (string.IsNullOrWhiteSpace(code))
+            throw new ArgumentException("A session code is required.", nameof(code));
 
         var normalized = code.Trim().ToUpperInvariant();
+        if (normalized.Length != 8)
+            throw new ArgumentException("Session codes must contain eight characters.", nameof(code));
         if (normalized.Any(character => !CodeAlphabet.Contains(character)))
             throw new ArgumentException("The session code contains invalid characters.", nameof(code));
 

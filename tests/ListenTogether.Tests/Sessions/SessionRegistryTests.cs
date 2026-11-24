@@ -22,10 +22,11 @@ public sealed class SessionRegistryTests
         var registry = new SessionRegistry();
         var invitation = registry.CreateSession("host-1", "Host");
 
-        var result = registry.JoinSession("listener-1", invitation.Code.ToLowerInvariant(), "Listener");
+        var result = registry.JoinSession("listener-1", $"  {invitation.Code.ToLowerInvariant()}  ", "Listener");
 
         Assert.Equal(invitation.Code, result.Invitation.Code);
         Assert.Equal("Host", result.HostDisplayName);
+        Assert.Equal("Listener", result.JoinedParticipant.DisplayName);
         Assert.Equal(2, result.Participants.Count);
         Assert.Contains(result.Participants, participant => participant.DisplayName == "Host" && participant.IsHost);
         Assert.Contains(result.Participants, participant => participant.DisplayName == "Listener" && !participant.IsHost);

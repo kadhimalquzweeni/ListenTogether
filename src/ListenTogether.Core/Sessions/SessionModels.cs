@@ -13,4 +13,5 @@ public sealed record SessionParticipant(string DisplayName, bool IsHost);
 public sealed record SessionJoinResult(
     SessionInvitation Invitation,
     string HostDisplayName,
-    IReadOnlyList<SessionParticipant> Participants);
+    IReadOnlyList<SessionParticipant> Participants,
+    SessionParticipant JoinedParticipant);

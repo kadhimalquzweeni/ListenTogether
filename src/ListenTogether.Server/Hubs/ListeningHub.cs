@@ -37,7 +37,7 @@ public sealed class ListeningHub(SessionRegistry sessions) : Hub
             {
                 await Groups.AddToGroupAsync(Context.ConnectionId, result.Invitation.Code, Context.ConnectionAborted);
                 await Clients.OthersInGroup(result.Invitation.Code)
-                    .SendAsync("ParticipantJoined", result.Participants.Last(), Context.ConnectionAborted);
+                    .SendAsync("ParticipantJoined", result.JoinedParticipant, Context.ConnectionAborted);
                 return result;
             }
             catch
