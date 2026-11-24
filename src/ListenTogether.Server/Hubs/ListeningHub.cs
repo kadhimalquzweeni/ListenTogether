@@ -72,6 +72,47 @@ public sealed class ListeningHub(SessionRegistry sessions) : Hub
             Context.ConnectionAborted);
     }
 
+    /// <summary>Returns the server-assigned SignalR identity used in ECDH transcript binding.</summary>
+    public string GetConnectionId() => Context.ConnectionId;
+
+    /// <summary>
+    /// Relays an ECDH offer to exactly one peer after validating that both
+    /// connections are active members of the stated session.
+    /// </summary>
+    public async Task PublishPeerKeyOffer(PeerKeyOffer offer)
+    {
+        if (offer is null ||
+            offer.PublicKey is null || offer.PublicKey.Length is < 64 or > 512 ||
+            offer.Nonce is null || offer.Nonce.Length != 32 ||
+            !string.Equals(offer.FromConnectionId, Context.ConnectionId, StringComparison.Ordinal) ||
+            !sessions.TryGetPeerSession(offer.SessionId, Context.ConnectionId, offer.ToConnectionId))
+            throw new HubException("The peer key offer is invalid or the target is not in this session.");
+
+        await Clients.Client(offer.ToConnectionId).SendAsync(
+            "PeerKeyOfferReceived",
+            new PeerKeyOfferMessage(Context.ConnectionId, offer),
+            Context.ConnectionAborted);
+    }
+
+    /// <summary>Relays key confirmation only to the peer bound into the ECDH transcript.</summary>
+    public async Task PublishPeerKeyProof(
+        Guid sessionId,
+        string toConnectionId,
+        byte[] transcriptHash,
+        byte[] proof)
+    {
+        if (transcriptHash is null || transcriptHash.Length != 32 ||
+            proof is null || proof.Length != 32 ||
+            !sessions.TryGetPeerSession(sessionId, Context.ConnectionId, toConnectionId))
+            throw new HubException("The peer key confirmation is invalid or the target is not in this session.");
+
+        await Clients.Client(toConnectionId).SendAsync(
+            "PeerKeyProofReceived",
+            new PeerKeyProofMessage(sessionId, Context.ConnectionId, toConnectionId,
+                transcriptHash, proof),
+            Context.ConnectionAborted);
+    }
+
     public async Task SendAudioPacket(byte[] packet, long sequence)
     {
         if (packet is null || !sessions.TryAcceptAudioPacket(Context.ConnectionId, sequence, packet.Length))
