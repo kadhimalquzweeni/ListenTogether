@@ -45,6 +45,7 @@ public sealed class SignalRSessionClient : IAsyncDisposable
         {
             _sessionCode = null;
             _sessionId = Guid.Empty;
+            ConnectionId = null;
             _isHost = false;
             SessionEnded?.Invoke(reason);
         });
