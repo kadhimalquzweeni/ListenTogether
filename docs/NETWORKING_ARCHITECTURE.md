@@ -7,7 +7,7 @@ ListenTogether uses SignalR for session signalling and fallback audio relay, and
 1. The desktop client connects to the ASP.NET Core SignalR signalling endpoint over TLS.
 2. A participant gathers local IPv4 UDP host candidates and a server-reflexive candidate using the configured signalling host on UDP port 3478. STUN uses the same UDP socket that is retained for subsequent connectivity checks and media.
 3. Candidates are exchanged through the session signalling channel. Existing participants republish their candidates when a new participant joins, so late joiners receive candidates from everyone.
-4. Both peers send authenticated connectivity checks to the other peer's candidates concurrently (UDP hole punching). The first authenticated endpoint is selected, and periodic keepalives maintain the NAT mapping. The selected socket remains alive for the duration of the session.
+4. Both peers send authenticated connectivity checks to the other peer's candidates concurrently (UDP hole punching). The first authenticated endpoint is selected; a later authenticated check can update it if the peer's NAT mapping changes. Periodic keepalives maintain the NAT mapping, and the selected socket remains alive for the duration of the session.
 5. Opus frames are encrypted and sent over the selected UDP path. If a peer has no active direct path, the host relays that peer's audio through SignalR. STUN does not relay traffic and cannot make a private home server reachable through NAT.
 
 ## Protected UDP datagrams
@@ -22,7 +22,7 @@ Receivers enforce a 64-packet sliding replay window. Authentication must succeed
 
 **SignalR signalling implemented:** each created session receives a stable random GUID, returned to every participant. The hub exposes the server-assigned connection ID and relays ECDH offers and 32-byte confirmation proofs directly to a named peer only after verifying that sender and recipient are distinct active members of the same session and that the offer's session/connection fields match the server context. Offers and proofs are bounded before forwarding. The desktop SignalR client exposes session ID, connection ID, peer-offer/proof events, and corresponding send methods. `IPeerKeySignalling` isolates this protocol from SignalR so coordinator orchestration can be tested independently.
 
-**Trust requirements:** the HMAC is key confirmation, not identity authentication: a malicious signalling server could substitute both public keys. Current trust is therefore the TLS-protected signalling service and its session membership checks. Do not enable direct UDP media until the desktop negotiation coordinator verifies both proofs and the client falls back safely to SignalR. For protection against a malicious signalling service, add an independently verifiable peer identity or user-verified fingerprint.
+**Trust requirements:** the HMAC is key confirmation, not identity authentication: a malicious signalling server could substitute both public keys. Current trust is therefore the TLS-protected signalling service and its session membership checks. The desktop enables direct UDP only after the negotiation coordinator verifies both proofs; participants without a verified direct path continue using SignalR relay. For protection against a malicious signalling service, add an independently verifiable peer identity or user-verified fingerprint.
 
 ## Deployment constraint
 
