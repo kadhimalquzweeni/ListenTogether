@@ -20,6 +20,7 @@ public sealed class PeerKeyNegotiationCoordinator : IDisposable
         _session.PeerKeyOfferReceived += OnPeerKeyOfferReceived;
         _session.PeerKeyProofReceived += OnPeerKeyProofReceived;
         _session.ParticipantLeft += OnParticipantLeft;
+        _session.ParticipantJoined += OnParticipantJoined;
         _session.SessionEnded += OnSessionEnded;
         _session.ConnectionClosed += OnConnectionClosed;
     }
@@ -48,7 +49,34 @@ public sealed class PeerKeyNegotiationCoordinator : IDisposable
         }
 
         if (offer is not null)
-            await _session.PublishPeerKeyOfferAsync(offer, cancellationToken).ConfigureAwait(false);
+        {
+            try
+            {
+                await _session.PublishPeerKeyOfferAsync(offer, cancellationToken).ConfigureAwait(false);
+            }
+            catch
+            {
+                lock (state.Sync)
+                    state.OfferPublished = false;
+                throw;
+            }
+        }
+    }
+
+    /// <summary>Starts negotiations with every other participant in the join result.</summary>
+    public Task BeginSessionPeersAsync(SessionJoinResult joinResult, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(joinResult);
+        var localId = _session.ConnectionId;
+        if (string.IsNullOrWhiteSpace(localId))
+            throw new InvalidOperationException("The SignalR connection identity is not available.");
+
+        return BeginPeersAsync(
+            joinResult.Participants
+                .Where(participant => !string.IsNullOrWhiteSpace(participant.ConnectionId))
+                .Select(participant => participant.ConnectionId!)
+                .Where(connectionId => !string.Equals(connectionId, localId, StringComparison.Ordinal)),
+            cancellationToken);
     }
 
     /// <summary>Starts independent negotiations with all supplied remote participants.</summary>
@@ -203,6 +231,18 @@ public sealed class PeerKeyNegotiationCoordinator : IDisposable
         return _peers.GetOrAdd(remoteConnectionId, _ => new PeerState());
     }
 
+    private void OnParticipantJoined(SessionParticipant participant)
+    {
+        if (!string.IsNullOrWhiteSpace(participant.ConnectionId))
+            _ = BeginPeerSafelyAsync(participant.ConnectionId);
+    }
+
+    private async Task BeginPeerSafelyAsync(string connectionId)
+    {
+        try { await BeginPeerAsync(connectionId).ConfigureAwait(false); }
+        catch (Exception) { RemovePeer(connectionId); }
+    }
+
     private void OnParticipantLeft(SessionParticipant participant)
     {
         // Connection IDs are supplied by the hub's peer departure notification.
@@ -236,6 +276,7 @@ public sealed class PeerKeyNegotiationCoordinator : IDisposable
         _session.PeerKeyOfferReceived -= OnPeerKeyOfferReceived;
         _session.PeerKeyProofReceived -= OnPeerKeyProofReceived;
         _session.ParticipantLeft -= OnParticipantLeft;
+        _session.ParticipantJoined -= OnParticipantJoined;
         _session.SessionEnded -= OnSessionEnded;
         _session.ConnectionClosed -= OnConnectionClosed;
         ClearPeers();
