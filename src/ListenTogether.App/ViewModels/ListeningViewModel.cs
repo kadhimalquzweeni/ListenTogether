@@ -13,7 +13,7 @@ public sealed class ListeningViewModel : INotifyPropertyChanged, IAsyncDisposabl
     private readonly SignalRSessionClient _client;
     private readonly PeerKeyNegotiationCoordinator _peerNegotiation;
     private readonly UdpPeerCandidateCoordinator _peerCandidates;
-    private bool _udpCandidatesReady;
+    private UdpPeerTransportCoordinator? _udpTransport;
     private readonly OpusAudioDecoder _decoder = new();
     private WasapiAudioPlayback? _playback;
     private int _isDisposed;
@@ -120,11 +120,19 @@ public sealed class ListeningViewModel : INotifyPropertyChanged, IAsyncDisposabl
                     await _peerCandidates.StartAsync(
                         _serverUri,
                         stunTimeout: TimeSpan.FromSeconds(2));
-                    _udpCandidatesReady = true;
+                    _udpTransport = new UdpPeerTransportCoordinator(
+                        _peerCandidates, _peerNegotiation, _client.SessionId);
+                    _udpTransport.PeerConnected += OnDirectPeerConnected;
+                    _udpTransport.AudioPacketReceived += OnDirectAudioPacketReceived;
+                    await _udpTransport.StartAsync();
                 }
                 catch (Exception exception)
                 {
-                    _udpCandidatesReady = false;
+                    if (_udpTransport is not null)
+                    {
+                        await _udpTransport.DisposeAsync();
+                        _udpTransport = null;
+                    }
                     StatusMessage = $"UDP discovery unavailable; audio will use the SignalR relay. {exception.Message}";
                 }
 
@@ -132,8 +140,8 @@ public sealed class ListeningViewModel : INotifyPropertyChanged, IAsyncDisposabl
                 ParticipantCount = result.Participants.Count;
                 IsConnected = true;
                 _playback.Start();
-                StatusMessage = _udpCandidatesReady
-                    ? $"You're listening with {HostDisplayName}. UDP candidates exchanged; audio remains relayed."
+                StatusMessage = _udpTransport is not null
+                    ? $"You're listening with {HostDisplayName}. Direct UDP is being negotiated; relay fallback is active."
                     : $"You're listening with {HostDisplayName} (relay mode).";
             }
             catch (Exception exception)
@@ -169,6 +177,14 @@ public sealed class ListeningViewModel : INotifyPropertyChanged, IAsyncDisposabl
 
         StatusMessage = "Leaving session…";
         IsConnected = false;
+
+        if (_udpTransport is not null)
+        {
+            _udpTransport.PeerConnected -= OnDirectPeerConnected;
+            _udpTransport.AudioPacketReceived -= OnDirectAudioPacketReceived;
+            await _udpTransport.DisposeAsync();
+            _udpTransport = null;
+        }
 
         _peerNegotiation.Dispose();
         _peerCandidates.Dispose();
@@ -206,6 +222,13 @@ public sealed class ListeningViewModel : INotifyPropertyChanged, IAsyncDisposabl
                 await _playback.DisposeAsync();
                 _playback = null;
             }
+            if (_udpTransport is not null)
+            {
+                _udpTransport.PeerConnected -= OnDirectPeerConnected;
+                _udpTransport.AudioPacketReceived -= OnDirectAudioPacketReceived;
+                await _udpTransport.DisposeAsync();
+                _udpTransport = null;
+            }
             _peerNegotiation.Dispose();
             _peerCandidates.Dispose();
             await _client.DisposeAsync();
@@ -218,7 +241,13 @@ public sealed class ListeningViewModel : INotifyPropertyChanged, IAsyncDisposabl
     }
 
     private void OnPeerSecured(string peerConnectionId, PeerKeyAgreementResult result)
-        => NotifyOnUi(() => StatusMessage = $"A secure peer link has been established with {HostDisplayName}. Audio is still using the relay.");
+        => NotifyOnUi(() => StatusMessage = $"A secure peer link has been established; direct UDP connectivity is being checked.");
+
+    private void OnDirectPeerConnected(string peerConnectionId, System.Net.IPEndPoint endpoint)
+        => NotifyOnUi(() => StatusMessage = $"Direct UDP audio connection established with {peerConnectionId}.");
+
+    private void OnDirectAudioPacketReceived(string peerConnectionId, byte[] packet, ulong sequence)
+        => OnAudioPacketReceived(packet, sequence <= long.MaxValue ? (long)sequence : 0);
 
     private void OnAudioPacketReceived(byte[] packet, long sequence)
     {
