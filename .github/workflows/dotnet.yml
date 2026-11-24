@@ -17,5 +17,7 @@ jobs:
           dotnet-version: 10.0.x
       - name: Restore
         run: dotnet restore ListenTogether.sln
+      - name: Build
+        run: dotnet build ListenTogether.sln --configuration Release --no-restore
       - name: Test
-        run: dotnet test ListenTogether.sln --configuration Release --no-restore
+        run: dotnet test ListenTogether.sln --configuration Release --no-build --no-restore
