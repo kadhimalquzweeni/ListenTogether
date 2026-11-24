@@ -74,6 +74,63 @@ public sealed class UdpPeerTransportCoordinatorTests
     }
 
     [Fact]
+    public async Task AuthenticatedConnectivityCheck_CanUpdateChangedRemoteEndpoint()
+    {
+        var network = new FakeNetwork(SessionId);
+        var hostSignalling = network.AddPeer("host");
+        var listenerSignalling = network.AddPeer("listener");
+        using var hostCandidates = new UdpPeerCandidateCoordinator(hostSignalling, new LoopbackCandidateGatherer());
+        using var listenerCandidates = new UdpPeerCandidateCoordinator(listenerSignalling, new LoopbackCandidateGatherer());
+        using var hostKeys = new PeerKeyNegotiationCoordinator(hostSignalling);
+        using var listenerKeys = new PeerKeyNegotiationCoordinator(listenerSignalling);
+
+        await hostCandidates.StartAsync(new Uri("http://127.0.0.1:5000"));
+        await listenerCandidates.StartAsync(new Uri("http://127.0.0.1:5000"));
+        var secured = new CountdownEvent(2);
+        hostKeys.PeerSecured += (_, _) => secured.Signal();
+        listenerKeys.PeerSecured += (_, _) => secured.Signal();
+        await Task.WhenAll(hostKeys.BeginPeerAsync("listener"), listenerKeys.BeginPeerAsync("host"));
+        Assert.True(secured.Wait(TimeSpan.FromSeconds(5)));
+
+        await using var hostTransport = new UdpPeerTransportCoordinator(hostCandidates, hostKeys, SessionId);
+        var firstEndpointConnected = new TaskCompletionSource<IPEndPoint>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var secondEndpointConnected = new TaskCompletionSource<IPEndPoint>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        await hostTransport.StartAsync();
+        hostTransport.PeerConnected += (peer, endpoint) =>
+        {
+            if (peer != "listener")
+                return;
+            if (firstEndpointConnected.Task.IsCompleted)
+                secondEndpointConnected.TrySetResult(endpoint);
+            else
+                firstEndpointConnected.TrySetResult(endpoint);
+        };
+
+        var listenerKeysResult = listenerKeys.GetSecuredResult("host")!;
+        using var listenerSendCodec = new UdpSecurePacketCodec(
+            listenerKeysResult.SendKey, listenerKeysResult.SendNoncePrefix);
+        using var firstSocket = new UdpClient(new IPEndPoint(IPAddress.Loopback, 0));
+        using var secondSocket = new UdpClient(new IPEndPoint(IPAddress.Loopback, 0));
+        var hostEndpoint = (IPEndPoint)hostCandidates.LocalCandidateSet!.TransportSocket.Client.LocalEndPoint!;
+        var challenge = new byte[16];
+
+        var firstDatagram = listenerSendCodec.Encrypt(
+            SessionId, UdpPacketType.ConnectivityCheck, 1, challenge);
+        await firstSocket.SendAsync(firstDatagram, hostEndpoint);
+        var firstEndpoint = await firstEndpointConnected.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(((IPEndPoint)firstSocket.Client.LocalEndPoint!).Port, firstEndpoint.Port);
+
+        var secondDatagram = listenerSendCodec.Encrypt(
+            SessionId, UdpPacketType.ConnectivityCheck, 2, challenge);
+        await secondSocket.SendAsync(secondDatagram, hostEndpoint);
+        var secondEndpoint = await secondEndpointConnected.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(((IPEndPoint)secondSocket.Client.LocalEndPoint!).Port, secondEndpoint.Port);
+        Assert.NotEqual(firstEndpoint.Port, secondEndpoint.Port);
+    }
+
+    [Fact]
     public async Task AudioLargerThanSecureDatagramLimit_IsNotSentDirectly()
     {
         var network = new FakeNetwork(SessionId);
