@@ -63,7 +63,7 @@ Open `ListenTogether.sln` in Visual Studio, set `ListenTogether.App` as the star
 
 On the home screen:
 1. Set **Relay server** to `http://localhost:5000`.
-2. Enter the name you want other listeners to see.
+2. Enter the name you want other listeners to see. The relay URL and display name are saved in your Windows user profile for the next launch.
 3. Choose **Create session**.
 4. Select **All system audio** or **Selected applications**.
 5. Adjust the source volumes and mute controls.
