@@ -1,3 +1,4 @@
+using Concentus;
 using Concentus.Enums;
 using Concentus.Structs;
 using ListenTogether.Core.Audio;
@@ -8,15 +9,16 @@ namespace ListenTogether.Infrastructure.Audio;
 /// Converts the mixer's 10 ms float PCM blocks into standard 20 ms Opus packets.
 /// Encoder state is intentionally owned by one instance and used from one thread.
 /// </summary>
-public sealed class OpusAudioEncoder
+public sealed class OpusAudioEncoder : IDisposable
 {
     public const int FrameDurationMilliseconds = 20;
     public const int FrameSamplesPerChannel = AudioFormat.Broadcast.SampleRate * FrameDurationMilliseconds / 1_000;
-    public const int MaximumPacketBytes = 4_000;
+    public const int MaximumPacketBytes = 1_275;
 
     private readonly IOpusEncoder _encoder;
     private readonly short[] _pending = new short[FrameSamplesPerChannel * AudioFormat.Broadcast.Channels];
     private int _pendingSamples;
+    private bool _isDisposed;
 
     public OpusAudioEncoder(int bitrate = 128_000)
     {
@@ -34,6 +36,7 @@ public sealed class OpusAudioEncoder
 
     public IReadOnlyList<byte[]> Encode(AudioFrame frame)
     {
+        ObjectDisposedException.ThrowIf(_isDisposed, this);
         ArgumentNullException.ThrowIfNull(frame);
         if (frame.Format != AudioFormat.Broadcast)
             throw new ArgumentException("Opus streaming requires 48 kHz stereo PCM.", nameof(frame));
@@ -49,11 +52,9 @@ public sealed class OpusAudioEncoder
 
             var output = new byte[MaximumPacketBytes];
             var encodedBytes = _encoder.Encode(
-                _pending,
-                0,
+                _pending.AsSpan(),
                 FrameSamplesPerChannel,
-                output,
-                0,
+                output.AsSpan(),
                 output.Length);
 
             if (encodedBytes <= 0)
@@ -68,7 +69,16 @@ public sealed class OpusAudioEncoder
 
     public void Reset()
     {
+        ObjectDisposedException.ThrowIf(_isDisposed, this);
         Array.Clear(_pending);
         _pendingSamples = 0;
+    }
+
+    public void Dispose()
+    {
+        if (_isDisposed)
+            return;
+        _isDisposed = true;
+        _encoder.Dispose();
     }
 }
