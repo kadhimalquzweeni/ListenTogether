@@ -194,65 +194,69 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
                 return;
 
             IsLoading = true;
-        StatusMessage = "Connecting to the listening relay…";
+            StatusMessage = "Connecting to the listening relay…";
 
-        try
-        {
-            _sessionClient = _sessionClientFactory.Create(_serverUri);
-            _sessionClient.ConnectionClosed += OnConnectionClosed;
-            _sessionClient.ParticipantJoined += OnParticipantJoined;
-            _sessionClient.ParticipantLeft += OnParticipantLeft;
-            _sessionClient.SessionEnded += OnSessionEnded;
-            var invitation = await _sessionClient.CreateSessionAsync(_displayName);
-            SessionCode = invitation.Code;
-            ParticipantCount = 1;
-
-            _encoder = new OpusAudioEncoder();
-            _packetChannel = Channel.CreateBounded<EncodedAudioPacket>(new BoundedChannelOptions(100)
+            try
             {
-                FullMode = BoundedChannelFullMode.DropOldest,
-                SingleReader = true,
-                SingleWriter = true
-            });
-            _streamCancellation = new CancellationTokenSource();
-            _streamTask = StreamPacketsAsync(_packetChannel.Reader, _streamCancellation.Token);
+                _sessionClient = _sessionClientFactory.Create(_serverUri);
+                _sessionClient.ConnectionClosed += OnConnectionClosed;
+                _sessionClient.ParticipantJoined += OnParticipantJoined;
+                _sessionClient.ParticipantLeft += OnParticipantLeft;
+                _sessionClient.SessionEnded += OnSessionEnded;
 
-            _captureSession = new AudioCaptureMixerSession(selection, _captureFactory);
-            _captureSession.MixedFrameAvailable += OnMixedFrameAvailable;
-            _captureSession.CaptureFaulted += OnCaptureFaulted;
+                var invitation = await _sessionClient.CreateSessionAsync(_displayName);
+                SessionCode = invitation.Code;
+                ParticipantCount = 1;
 
-            foreach (var item in selectedItems)
-            {
-                item.GainChanged += OnSelectedSourceGainChanged;
-                _activeGainSources.Add(item);
+                _encoder = new OpusAudioEncoder();
+                _packetChannel = Channel.CreateBounded<EncodedAudioPacket>(new BoundedChannelOptions(100)
+                {
+                    FullMode = BoundedChannelFullMode.DropOldest,
+                    SingleReader = true,
+                    SingleWriter = true
+                });
+                _streamCancellation = new CancellationTokenSource();
+                _streamTask = StreamPacketsAsync(_packetChannel.Reader, _streamCancellation.Token);
+
+                _captureSession = new AudioCaptureMixerSession(selection, _captureFactory);
+                _captureSession.MixedFrameAvailable += OnMixedFrameAvailable;
+                _captureSession.CaptureFaulted += OnCaptureFaulted;
+
+                foreach (var item in selectedItems)
+                {
+                    item.GainChanged += OnSelectedSourceGainChanged;
+                    _activeGainSources.Add(item);
+                }
+
+                await _captureSession.StartAsync();
+                if (_sessionClient is not { IsConnected: true } || _sessionClient.SessionCode is null)
+                    throw new InvalidOperationException("The relay connection was lost while audio capture was starting.");
+
+                foreach (var item in selectedItems)
+                    _captureSession.SetGain(item.Source.Id, item.EffectiveGain);
+
+                IsCapturing = true;
+                StatusMessage = $"Sharing audio. Invite code: {SessionCode}";
             }
+            catch (Exception exception)
+            {
+                var message = exception.Message;
+                try { await CleanupSessionAsync(); }
+                catch (Exception cleanupException)
+                {
+                    message += " Cleanup also failed: " + cleanupException.Message;
+                }
 
-            await _captureSession.StartAsync();
-            if (_sessionClient is not { IsConnected: true } || _sessionClient.SessionCode is null)
-                throw new InvalidOperationException("The relay connection was lost while audio capture was starting.");
-
-            foreach (var item in selectedItems)
-                _captureSession.SetGain(item.Source.Id, item.EffectiveGain);
-
-            IsCapturing = true;
-            StatusMessage = $"Sharing audio. Invite code: {SessionCode}";
-        }
-        catch (Exception exception)
-        {
-            var message = exception.Message;
-            try { await CleanupSessionAsync(); }
-            catch (Exception cleanupException) { message += " Cleanup also failed: " + cleanupException.Message; }
-
-            IsCapturing = false;
-            OutputLevel = 0;
-            SessionCode = string.Empty;
-            ParticipantCount = 0;
-            StatusMessage = "Couldn't start the session: " + message;
-        }
-        finally
-        {
-            IsLoading = false;
-        }
+                IsCapturing = false;
+                OutputLevel = 0;
+                SessionCode = string.Empty;
+                ParticipantCount = 0;
+                StatusMessage = "Couldn't start the session: " + message;
+            }
+            finally
+            {
+                IsLoading = false;
+            }
         }
         finally
         {
@@ -272,25 +276,26 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
                 return;
 
             IsLoading = true;
-        StatusMessage = "Stopping the listening session…";
+            StatusMessage = "Stopping the listening session…";
 
-        try
-        {
-            await CleanupSessionAsync();
-            IsCapturing = false;
-            OutputLevel = 0;
-            SessionCode = string.Empty;
-            ParticipantCount = 0;
-            StatusMessage = "Session ended. Your audio is no longer being shared.";
-        }
-        catch (Exception exception)
-        {
-            StatusMessage = $"Couldn't stop the session cleanly: {exception.Message}";
-        }
-        finally
-        {
-            IsLoading = false;
-        }
+            try
+            {
+                await CleanupSessionAsync();
+                IsCapturing = false;
+                OutputLevel = 0;
+                SessionCode = string.Empty;
+                ParticipantCount = 0;
+                StatusMessage = "Session ended. Your audio is no longer being shared.";
+            }
+            catch (Exception exception)
+            {
+                IsCapturing = false;
+                StatusMessage = $"Couldn't stop the session cleanly: {exception.Message}";
+            }
+            finally
+            {
+                IsLoading = false;
+            }
         }
         finally
         {

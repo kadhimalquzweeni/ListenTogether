@@ -12,7 +12,8 @@ public sealed class ListeningViewModel : INotifyPropertyChanged, IAsyncDisposabl
 {
     private readonly SignalRSessionClient _client;
     private readonly OpusAudioDecoder _decoder = new();
-    private readonly WasapiAudioPlayback _playback = new();
+    private WasapiAudioPlayback? _playback;
+    private int _isDisposed;
     private readonly object _decodeLock = new();
     private readonly string _sessionCode;
     private bool _isConnecting;
@@ -88,11 +89,12 @@ public sealed class ListeningViewModel : INotifyPropertyChanged, IAsyncDisposabl
         StatusMessage = "Joining session…";
         try
         {
+            _playback = new WasapiAudioPlayback();
             var result = await _client.JoinSessionAsync(_sessionCode, _displayName);
             HostDisplayName = result.HostDisplayName;
             ParticipantCount = result.Participants.Count;
-            _playback.Start();
             IsConnected = true;
+            _playback.Start();
             StatusMessage = $"You're listening with {HostDisplayName}.";
         }
         catch (Exception exception)
@@ -116,12 +118,15 @@ public sealed class ListeningViewModel : INotifyPropertyChanged, IAsyncDisposabl
         try { await _client.LeaveSessionAsync(); }
         catch (Exception exception) { StatusMessage = $"Couldn't leave cleanly: {exception.Message}"; }
 
-        _playback.Clear();
+        _playback?.Clear();
         StatusMessage = "You've left the listening session.";
     }
 
     public async ValueTask DisposeAsync()
     {
+        if (Interlocked.Exchange(ref _isDisposed, 1) == 1)
+            return;
+
         _client.AudioPacketReceived -= OnAudioPacketReceived;
         _client.ParticipantJoined -= OnParticipantJoined;
         _client.ParticipantLeft -= OnParticipantLeft;
@@ -132,7 +137,11 @@ public sealed class ListeningViewModel : INotifyPropertyChanged, IAsyncDisposabl
         finally
         {
             _decoder.Dispose();
-            await _playback.DisposeAsync();
+            if (_playback is not null)
+            {
+                await _playback.DisposeAsync();
+                _playback = null;
+            }
             await _client.DisposeAsync();
         }
     }
@@ -144,7 +153,7 @@ public sealed class ListeningViewModel : INotifyPropertyChanged, IAsyncDisposabl
             lock (_decodeLock)
             {
                 var frame = _decoder.Decode(packet);
-                _playback.Write(frame);
+                _playback?.Write(frame);
             }
         }
         catch (Exception exception)
@@ -179,6 +188,7 @@ public sealed class ListeningViewModel : INotifyPropertyChanged, IAsyncDisposabl
         => NotifyOnUi(() =>
         {
             IsConnected = false;
+            _playback?.Clear();
             StatusMessage = exception is null
                 ? "Connection to the relay was closed."
                 : $"Connection to the relay was lost: {exception.Message}";
