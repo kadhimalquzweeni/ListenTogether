@@ -1,18 +1,33 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)][string]$Server,
+    [string]$HostLanIp,
     [int]$StunPort = 3478,
     [int]$TimeoutMilliseconds = 4000
 )
 
 $ErrorActionPreference = "Stop"
-$failed = [System.Collections.Generic.List[string]]::new()
-$passed = [System.Collections.Generic.List[string]]::new()
+$failed = [System.Collections.Generic.List[object]]::new()
 
 $ip = $null
 if (-not [System.Net.IPAddress]::TryParse($Server, [ref]$ip) -or
     $ip.AddressFamily -ne [System.Net.Sockets.AddressFamily]::InterNetwork) {
     throw "Supply the host's public IPv4 address, not a URL or LAN address. Example: -Server 203.0.113.42"
+}
+
+if ($HostLanIp) {
+    $lanIp = $null
+    if (-not [System.Net.IPAddress]::TryParse($HostLanIp, [ref]$lanIp) -or
+        $lanIp.AddressFamily -ne [System.Net.Sockets.AddressFamily]::InterNetwork) {
+        throw "HostLanIp must be the host PC's LAN IPv4 address, such as 192.168.1.50."
+    }
+    $octets = $HostLanIp.Split('.') | ForEach-Object { [int]$_ }
+    $isPrivate = $octets[0] -eq 10 -or
+        ($octets[0] -eq 172 -and $octets[1] -ge 16 -and $octets[1] -le 31) -or
+        ($octets[0] -eq 192 -and $octets[1] -eq 168)
+    if (-not $isPrivate) {
+        throw "HostLanIp should be a private LAN address (10.x, 172.16-31.x, or 192.168.x)."
+    }
 }
 
 function Test-TcpPort {
@@ -67,29 +82,60 @@ function Test-StunBinding {
     finally { $udp.Dispose() }
 }
 
-Write-Host "Testing ListenTogether at $($ip.ToString()) from this network..." -ForegroundColor Cyan
-Write-Host "Run this on a different internet connection, not the host's Wi-Fi."
-Write-Host ""
+function Write-RequiredRouterRule {
+    param([string]$Name, [string]$Protocol, [int]$Port, [string]$LanAddress)
 
-foreach ($port in @(80, 443)) {
-    if (Test-TcpPort -Address $ip.ToString() -Port $port -Timeout $TimeoutMilliseconds) {
-        $passed.Add("TCP $port is reachable.")
-        Write-Host "[PASS] TCP $port reachable" -ForegroundColor Green
+    Write-Host ""
+    Write-Host "ROUTER CHANGE REQUIRED - $Name" -ForegroundColor Yellow
+    Write-Host "Open Port Forwarding / Virtual Server / NAT Rules. Add a rule or edit the existing one to match:"
+    Write-Host "  Rule name / service: ListenTogether $Name"
+    Write-Host "  Protocol:            $Protocol"
+    Write-Host "  External / WAN port: $Port"
+    Write-Host "  Internal / LAN port: $Port"
+    if ($LanAddress) {
+        Write-Host "  Device / target IP:  $LanAddress"
     }
     else {
-        $failed.Add("TCP $port is unreachable. Check router forwarding TCP external $port -> host LAN IP port $port, the matching Windows Firewall rule, and whether another service is listening.")
-        Write-Host "[FAIL] TCP $port unreachable" -ForegroundColor Red
+        Write-Host "  Device / target IP:  <host PC's reserved LAN IPv4 address>"
+        Write-Host "                       Run Setup-ListenTogether.ps1 on the host PC to display it."
     }
+    Write-Host "  Enabled:             Yes"
+    Write-Host "  Source / remote IP:  Any / blank"
+    Write-Host "  Schedule:            Always"
+    Write-Host "Use the exact protocol shown; do not forward TCP 5000."
+}
+
+Write-Host "Testing ListenTogether at $($ip.ToString()) from this network..." -ForegroundColor Cyan
+Write-Host "Run this on a different internet connection, not the host's Wi-Fi."
+if ($HostLanIp) { Write-Host "Host LAN destination supplied: $HostLanIp" }
+Write-Host ""
+
+$tcp80 = Test-TcpPort -Address $ip.ToString() -Port 80 -Timeout $TimeoutMilliseconds
+$tcp443 = Test-TcpPort -Address $ip.ToString() -Port 443 -Timeout $TimeoutMilliseconds
+
+if ($tcp80) {
+    Write-Host "[PASS] TCP 80 reachable" -ForegroundColor Green
+}
+else {
+    Write-Host "[FAIL] TCP 80 unreachable" -ForegroundColor Red
+    $failed.Add(@{ Name = "HTTP / certificate validation"; Protocol = "TCP"; Port = 80 })
+}
+
+if ($tcp443) {
+    Write-Host "[PASS] TCP 443 reachable" -ForegroundColor Green
+}
+else {
+    Write-Host "[FAIL] TCP 443 unreachable" -ForegroundColor Red
+    $failed.Add(@{ Name = "HTTPS / app connection"; Protocol = "TCP"; Port = 443 })
 }
 
 $stun = Test-StunBinding -Address $ip.ToString() -Port $StunPort -Timeout $TimeoutMilliseconds
 if ($stun.Success) {
-    $passed.Add("UDP $StunPort STUN binding succeeded.")
     Write-Host "[PASS] UDP $StunPort STUN reachable. $($stun.Reason)" -ForegroundColor Green
 }
 else {
-    $failed.Add("UDP $StunPort STUN failed. Check that ListenTogether.Server is running, router forwarding UDP external $StunPort -> host LAN IP port $StunPort, and the matching Windows Firewall rule. TCP port checks cannot verify UDP.")
     Write-Host "[FAIL] UDP $StunPort STUN unreachable. $($stun.Reason)" -ForegroundColor Red
+    $failed.Add(@{ Name = "STUN / direct peer connectivity"; Protocol = "UDP"; Port = $StunPort })
 }
 
 Write-Host ""
@@ -99,14 +145,24 @@ if ($failed.Count -eq 0) {
     exit 0
 }
 
-Write-Host "Router / host configuration items to fix:" -ForegroundColor Yellow
+Write-Host "The following router forwarding entries need to be added or corrected:" -ForegroundColor Yellow
 foreach ($item in $failed) {
-    Write-Host "  - $item" -ForegroundColor Yellow
+    Write-RequiredRouterRule -Name $item.Name -Protocol $item.Protocol -Port $item.Port -LanAddress $HostLanIp
 }
+
 Write-Host ""
-Write-Host "Also verify:" -ForegroundColor Yellow
-Write-Host "  - The router forwards to the host PC's current reserved LAN IPv4 address."
-Write-Host "  - The router WAN IPv4 matches the host's detected public IPv4 (no upstream NAT/CGNAT)."
-Write-Host "  - The host PC is powered on and ListenTogether.Server/Caddy are running."
-Write-Host "  - Your ISP/router does not block inbound ports 80, 443, or UDP $StunPort."
+Write-Host "If those router entries already match exactly, check these host/ISP settings next:" -ForegroundColor Cyan
+if (-not $tcp80 -or -not $tcp443) {
+    Write-Host "  - Windows Firewall: allow inbound TCP 80 and TCP 443 on the active network profile."
+    Write-Host "  - Host services: Caddy must be running and listening on TCP 80/443."
+}
+if (-not $stun.Success) {
+    Write-Host "  - Windows Firewall: allow inbound UDP $StunPort."
+    Write-Host "  - Host service: ListenTogether.Server must be running and listening on UDP $StunPort."
+}
+Write-Host "  - DHCP reservation: ensure the router forwards to the host PC's current LAN IP, not an old address."
+Write-Host "  - Double NAT / CGNAT: router WAN IPv4 must match public IPv4 $($ip.ToString()). If not, ask your ISP for a public IPv4 address or put the upstream router into bridge mode."
+Write-Host "  - ISP/router filtering: confirm inbound TCP 80/443 and UDP $StunPort are not blocked."
+Write-Host ""
+Write-Host "A failed outside test cannot identify the exact incorrect router field. The rule above is the required target configuration; re-test after correcting it."
 exit 1
