@@ -1,48 +1,25 @@
-# ListenTogether networking architecture
+# Networking architecture
 
-## Product goal
+ListenTogether uses a signalling service to coordinate sessions and attempts a direct UDP media path between participants. The current desktop MVP still sends audio through SignalR; direct UDP media is being introduced in independently testable stages.
 
-ListenTogether is a downloadable Windows desktop application that lets one person share audio playing on their PC with listeners on other networks. Hosts and listeners should not need to configure routers, install VPN adapters, or run server software.
+## Connection establishment
 
-The intended connection model is inspired by Parsec's general networking approach. It does not use or reproduce Parsec's proprietary protocol.
+1. The desktop client connects to the ASP.NET Core SignalR signalling endpoint over TLS.
+2. A participant gathers local UDP host candidates and a server-reflexive candidate using STUN on the same UDP socket that will later carry media.
+3. Candidates are exchanged through the session signalling channel.
+4. Both peers will send connectivity checks to the other peer's candidates concurrently (UDP hole punching). The selected socket must remain alive for the duration of the session.
+5. If direct connectivity cannot be established, a publicly reachable UDP relay is required. STUN does not relay traffic and cannot make a private home server reachable through NAT.
 
-## Target architecture
+## Protected UDP datagrams
 
-1. **Public signalling service** — accepts outbound client connections, creates invite-code sessions, authenticates participants, and exchanges network candidates.
-2. **STUN service** — lets clients discover server-reflexive UDP endpoints.
-3. **Direct UDP media path** — peers attempt simultaneous connectivity checks / UDP hole punching and exchange encrypted Opus datagrams.
-4. **Relay fallback** — a publicly reachable UDP relay forwards encrypted datagrams when direct connectivity cannot be established.
-5. **Desktop client** — retains Windows audio capture, mixing, Opus encoding/decoding, and bounded playback buffering.
+The transport foundation uses AES-256-GCM authenticated encryption. Each direction must have its own independently derived 32-byte key and its own 4-byte nonce prefix. A nonce is the 4-byte prefix followed by the 64-bit big-endian packet sequence number. Sequence values must be unique and must never wrap for a given key/prefix pair; establish a fresh key before sequence exhaustion.
 
-The public services are independent of any user's desktop PC. The repository can build and self-host these services, but the official public service must be deployed to an internet-reachable environment before arbitrary users can connect. The desktop application must never assume the developer's home PC is the service.
+The authenticated header contains the LTUD magic value, protocol version, packet type, session GUID, sequence number and nonce prefix. The complete header is authenticated as additional data, so changing the session, type, sequence or prefix invalidates the authentication tag. The encrypted body is followed by a 16-byte GCM tag.
 
-## Connection sequence
+Receivers enforce a 64-packet sliding replay window. Authentication must succeed before a sequence is committed to the replay window. Datagrams larger than 1,200 bytes, malformed headers, wrong sessions, wrong nonce prefixes, invalid packet types, authentication failures and duplicate/too-old sequences are discarded.
 
-1. Host and listeners establish outbound secure signalling connections.
-2. Host creates an invite code; listeners join with that code.
-3. Each participant gathers local UDP endpoints and a server-reflexive endpoint from STUN.
-4. Participants publish candidates through the signalling channel.
-5. Peers attempt direct UDP connectivity checks.
-6. A secure peer handshake authenticates the session and derives media keys.
-7. The host sends Opus datagrams directly to connected listeners.
-8. If direct connectivity fails, peers use the public relay service.
-9. Signalling remains available for participant events and connection recovery.
+**Key management requirement:** the codec does not invent or distribute keys. The signalling/control plane must authenticate participants and establish distinct directional keys before enabling this transport. Never send a media key in plaintext or reuse one key/prefix pair in both directions. The key agreement and authenticated peer binding are a separate milestone; until that exists, the desktop client must continue using the existing SignalR audio path.
 
-## Current implementation status
+## Deployment constraint
 
-- [x] WPF audio capture, mixing, Opus encoding/decoding and playback.
-- [x] Invite-code sessions and SignalR signalling.
-- [x] Basic RFC 8489 STUN Binding server.
-- [x] Session-scoped peer-candidate exchange over SignalR.
-- [ ] STUN client and local UDP candidate gathering.
-- [ ] Direct UDP connectivity checks / hole punching.
-- [ ] Authenticated key exchange and encrypted media datagrams.
-- [ ] Public UDP media relay and client fallback.
-- [ ] Automatic direct/relay path selection and reconnection.
-- [ ] Public service deployment, monitoring, abuse controls and capacity planning.
-
-## Important deployment constraint
-
-STUN and signalling do not guarantee a direct path through every NAT. Some symmetric NATs, carrier-grade NATs, restrictive firewalls and enterprise networks prevent direct UDP connectivity. A relay is therefore required for reliable connectivity. The relay must be reachable independently of the host and must be sized for the expected concurrent audio bandwidth.
-
-No user should be asked to configure inbound router port forwarding. Clients establish outbound signalling and UDP traffic; the public service endpoints are deployed separately.
+A self-hosted STUN/signalling/relay service must be reachable from the public internet to support arbitrary users without router configuration. Hosting the service on a PC behind a typical home NAT is not sufficient by itself. A relay fallback requires a publicly reachable server; STUN alone is not a relay.
