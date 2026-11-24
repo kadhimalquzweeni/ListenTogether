@@ -44,10 +44,10 @@ public sealed class StunServerHostedServiceTests
             while (Stopwatch.GetTimestamp() < deadline)
             {
                 using var client = new UdpClient(AddressFamily.InterNetwork);
-                await client.SendAsync(request, new IPEndPoint(IPAddress.Loopback, port));
 
                 try
                 {
+                    await client.SendAsync(request, new IPEndPoint(IPAddress.Loopback, port));
                     var received = await client.ReceiveAsync()
                         .WaitAsync(TimeSpan.FromMilliseconds(200));
 
