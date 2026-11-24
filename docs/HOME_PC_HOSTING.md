@@ -66,7 +66,7 @@ Check locally:
 
 ## 5. Share an invite with your friend
 
-Start a session in the desktop app. Share the server address from the launcher together with the eight-character session invite code. Your friend enters the same HTTPS server address and invite code in their desktop app.
+Start a session in the desktop app. Use **Copy invite details** in the audio-sharing window to copy the server address and eight-character invite code together. Send that text to your friend. On their desktop app, they select **Paste invite details**; ListenTogether fills in the server address and invite code. They then select **Join session**.
 
 The server address is not a secret. Treat the invite code as a private bearer credential and only share it with the intended listener.
 
