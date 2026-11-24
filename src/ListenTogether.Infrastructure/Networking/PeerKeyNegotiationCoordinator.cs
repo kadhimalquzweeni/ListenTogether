@@ -76,8 +76,25 @@ public sealed class PeerKeyNegotiationCoordinator : IDisposable
         foreach (var peerId in _pendingPeers.Keys.ToArray())
         {
             cancellationToken.ThrowIfCancellationRequested();
-            await BeginPeerAsync(peerId, cancellationToken).ConfigureAwait(false);
-            _pendingPeers.TryRemove(peerId, out _);
+            try
+            {
+                await BeginPeerAsync(peerId, cancellationToken).ConfigureAwait(false);
+                _pendingPeers.TryRemove(peerId, out _);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (InvalidOperationException) when (_session.SessionId == Guid.Empty ||
+                string.IsNullOrWhiteSpace(_session.ConnectionId))
+            {
+                break;
+            }
+            catch (Exception)
+            {
+                // Keep the participant queued for a later retry; session creation
+                // and the SignalR audio fallback must not fail because UDP setup did.
+            }
         }
     }
 
