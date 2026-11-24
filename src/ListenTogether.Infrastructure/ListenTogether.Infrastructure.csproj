@@ -7,7 +7,7 @@
   <ItemGroup>
     <PackageReference Include="NAudio.Wasapi" Version="3.3.0" />
     <PackageReference Include="Concentus" Version="2.2.2" />
-    <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" Version="10.0.0" />
+    <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" Version="10.0.15" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\ListenTogether.Core\ListenTogether.Core.csproj" />
