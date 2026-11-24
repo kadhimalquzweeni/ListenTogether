@@ -164,7 +164,7 @@ public sealed class PeerKeyNegotiationCoordinatorTests
         listenerSignalling.HoldNextProof = true;
         await listener.BeginPeerAsync("host");
         await host.BeginPeerAsync("listener");
-        await WaitUntilAsync(() => host.GetSecuredResult("listener") is not null);
+        await hostSignalling.ProofPublished.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
         hostSignalling.RaiseProof(new PeerKeyProofMessage(
             SessionId, "listener", "host", new byte[32], new byte[32]));
@@ -235,6 +235,8 @@ public sealed class PeerKeyNegotiationCoordinatorTests
         public string? ConnectionId => connectionId;
         public bool HoldNextOffer { get; set; }
         public bool HoldNextProof { get; set; }
+        public TaskCompletionSource ProofPublished { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public event Action<PeerCandidateMessage>? PeerCandidateReceived;
         public event Action<PeerKeyOfferMessage>? PeerKeyOfferReceived;
@@ -281,6 +283,7 @@ public sealed class PeerKeyNegotiationCoordinatorTests
             CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            ProofPublished.TrySetResult();
             if (HoldNextProof)
             {
                 HoldNextProof = false;
