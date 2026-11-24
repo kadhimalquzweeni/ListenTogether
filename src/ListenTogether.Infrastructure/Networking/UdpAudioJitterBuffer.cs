@@ -8,7 +8,7 @@ namespace ListenTogether.Infrastructure.Networking;
 public sealed class UdpAudioJitterBuffer
 {
     private readonly object _sync = new();
-    private readonly SortedDictionary<ulong, BufferedFrame> _pending = [];
+    private readonly SortedDictionary<ulong, BufferedFrame> _pending = new();
     private readonly TimeSpan _latency;
     private readonly int _capacity;
     private ulong _expectedSequence;
@@ -84,8 +84,9 @@ public sealed class UdpAudioJitterBuffer
             var ready = new List<UdpAudioFrame>();
             while (_pending.Count > 0)
             {
-                if (_pending.Remove(_expectedSequence, out var expected))
+                if (_pending.TryGetValue(_expectedSequence, out var expected))
                 {
+                    _pending.Remove(_expectedSequence);
                     ready.Add(new UdpAudioFrame(_expectedSequence, expected.Payload));
                     if (_expectedSequence == ulong.MaxValue)
                     {
