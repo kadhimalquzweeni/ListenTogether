@@ -2,7 +2,13 @@
     email {$ACME_EMAIL}
 }
 
-{$LISTENTOGETHER_DOMAIN} {
+{$LISTENTOGETHER_PUBLIC_IP} {
+    tls {
+        issuer acme {
+            profile shortlived
+        }
+    }
+
     encode zstd gzip
     reverse_proxy 127.0.0.1:5000
 }
