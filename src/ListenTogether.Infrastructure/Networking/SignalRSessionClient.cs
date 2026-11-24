@@ -171,6 +171,13 @@ public sealed class SignalRSessionClient : IAsyncDisposable, IPeerKeySignalling
     public Task SendAudioPacketAsync(
         byte[] packet,
         long sequence,
+        CancellationToken cancellationToken = default) =>
+        SendAudioPacketAsync(packet, sequence, Array.Empty<string>(), cancellationToken);
+
+    public Task SendAudioPacketAsync(
+        byte[] packet,
+        long sequence,
+        IReadOnlyCollection<string> excludedConnectionIds,
         CancellationToken cancellationToken = default)
     {
         ThrowIfDisposed();
@@ -179,11 +186,17 @@ public sealed class SignalRSessionClient : IAsyncDisposable, IPeerKeySignalling
 
         if (packet is null || packet.Length is < 1 or > 1_275)
             throw new ArgumentOutOfRangeException(nameof(packet), "Opus packets must contain between 1 and 1,275 bytes.");
+        ArgumentNullException.ThrowIfNull(excludedConnectionIds);
+        if (excludedConnectionIds.Count > 15 ||
+            excludedConnectionIds.Any(string.IsNullOrWhiteSpace) ||
+            excludedConnectionIds.Distinct(StringComparer.Ordinal).Count() != excludedConnectionIds.Count)
+            throw new ArgumentException("The direct-peer exclusion list is invalid.", nameof(excludedConnectionIds));
 
         return _connection.SendAsync(
             "SendAudioPacket",
             packet,
             sequence,
+            excludedConnectionIds.ToArray(),
             cancellationToken);
     }
 
