@@ -17,6 +17,19 @@ jobs:
           dotnet-version: 10.0.x
       - name: Restore
         run: dotnet restore ListenTogether.sln
+      - name: Validate home-server PowerShell scripts
+        shell: pwsh
+        run: |
+          $files = Get-ChildItem scripts/home-server -Filter *.ps1
+          foreach ($file in $files) {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile($file.FullName, [ref]$tokens, [ref]$errors) | Out-Null
+            if ($errors.Count -gt 0) {
+              $errors | ForEach-Object { Write-Error $_.Message }
+              throw "PowerShell syntax validation failed for $($file.Name)."
+            }
+          }
       - name: Build
         run: dotnet build ListenTogether.sln --configuration Release --no-restore
       - name: Test
