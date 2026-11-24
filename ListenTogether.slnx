@@ -1,3 +1,6 @@
 <Solution>
-  <Project Path="ListenTogether/ListenTogether.csproj" />
+  <Project Path="src/ListenTogether.App/ListenTogether.App.csproj" />
+  <Project Path="src/ListenTogether.Core/ListenTogether.Core.csproj" />
+  <Project Path="src/ListenTogether.Infrastructure/ListenTogether.Infrastructure.csproj" />
+  <Project Path="tests/ListenTogether.Tests/ListenTogether.Tests.csproj" />
 </Solution>
