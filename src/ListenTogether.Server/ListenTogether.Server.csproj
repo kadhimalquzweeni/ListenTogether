@@ -5,9 +5,6 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Microsoft.AspNetCore.SignalR.Protocols.MessagePack" Version="10.0.0" />
-  </ItemGroup>
-  <ItemGroup>
     <ProjectReference Include="..\ListenTogether.Core\ListenTogether.Core.csproj" />
   </ItemGroup>
 </Project>

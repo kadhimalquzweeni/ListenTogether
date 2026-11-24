@@ -9,7 +9,7 @@ builder.Services.AddSignalR(options =>
     options.MaximumReceiveMessageSize = 16 * 1024;
     options.KeepAliveInterval = TimeSpan.FromSeconds(10);
     options.ClientTimeoutInterval = TimeSpan.FromSeconds(30);
-}).AddMessagePackProtocol();
+});
 
 builder.Services.AddHealthChecks();
 
@@ -27,4 +27,4 @@ app.MapHub<ListeningHub>("/hubs/listening");
 
 app.Run();
 
-public partial class Program;
+public partial class Program { }
