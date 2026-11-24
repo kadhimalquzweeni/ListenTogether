@@ -17,8 +17,13 @@ public static partial class InviteDetailsParser
         if (string.IsNullOrWhiteSpace(text))
             return false;
 
-        var serverMatch = ServerLineRegex().Match(text);
-        var codeMatch = InviteCodeLineRegex().Match(text);
+        var serverMatches = ServerLineRegex().Matches(text);
+        var codeMatches = InviteCodeLineRegex().Matches(text);
+        if (serverMatches.Count != 1 || codeMatches.Count != 1)
+            return false;
+
+        var serverMatch = serverMatches[0];
+        var codeMatch = codeMatches[0];
         if (!serverMatch.Success || !codeMatch.Success ||
             !Uri.TryCreate(serverMatch.Groups["url"].Value, UriKind.Absolute, out var uri) ||
             uri.Scheme is not ("http" or "https") ||
