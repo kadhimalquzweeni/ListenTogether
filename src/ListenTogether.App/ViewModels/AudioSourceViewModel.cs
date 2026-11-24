@@ -35,6 +35,7 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
     private double _outputLevel;
     private int _participantCount;
     private long _packetSequence;
+    private int _isDisposed;
 
     public AudioSourceViewModel(
         IAudioSourceDiscovery discovery,
@@ -180,9 +181,11 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
 
     public async Task StartAsync()
     {
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _isDisposed) == 1, this);
         await _sessionLifecycle.WaitAsync();
         try
         {
+            ObjectDisposedException.ThrowIf(Volatile.Read(ref _isDisposed) == 1, this);
             if (IsCapturing || IsLoading)
                 return;
 
@@ -236,8 +239,15 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
         }
         catch (Exception exception)
         {
-            await CleanupSessionAsync();
-            StatusMessage = $"Couldn't start the session: {exception.Message}";
+            var message = exception.Message;
+            try { await CleanupSessionAsync(); }
+            catch (Exception cleanupException) { message += " Cleanup also failed: " + cleanupException.Message; }
+
+            IsCapturing = false;
+            OutputLevel = 0;
+            SessionCode = string.Empty;
+            ParticipantCount = 0;
+            StatusMessage = "Couldn't start the session: " + message;
         }
         finally
         {
@@ -252,6 +262,9 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
 
     public async Task StopAsync()
     {
+        if (Volatile.Read(ref _isDisposed) == 1)
+            return;
+
         await _sessionLifecycle.WaitAsync();
         try
         {
@@ -287,9 +300,20 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
 
     public async ValueTask DisposeAsync()
     {
-        if (_captureSession is not null || _sessionClient is not null)
-            await StopAsync();
-        _sessionLifecycle.Dispose();
+        if (Interlocked.Exchange(ref _isDisposed, 1) == 1)
+            return;
+
+        await _sessionLifecycle.WaitAsync();
+        try
+        {
+            await CleanupSessionAsync();
+            IsCapturing = false;
+        }
+        finally
+        {
+            _sessionLifecycle.Release();
+            _sessionLifecycle.Dispose();
+        }
     }
 
     private IReadOnlyList<AudioSourceItemViewModel> GetSelection(out AudioSourceSelection? selection)
@@ -430,50 +454,58 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
 
     private async Task CleanupSessionAsync()
     {
-        if (_captureSession is not null)
+        Exception? cleanupError = null;
+
+        var captureSession = _captureSession;
+        _captureSession = null;
+        if (captureSession is not null)
         {
-            _captureSession.MixedFrameAvailable -= OnMixedFrameAvailable;
-            _captureSession.CaptureFaulted -= OnCaptureFaulted;
-            await _captureSession.DisposeAsync();
-            _captureSession = null;
+            captureSession.MixedFrameAvailable -= OnMixedFrameAvailable;
+            captureSession.CaptureFaulted -= OnCaptureFaulted;
+            try { await captureSession.DisposeAsync(); }
+            catch (Exception exception) { cleanupError = exception; }
         }
 
         foreach (var item in _activeGainSources)
             item.GainChanged -= OnSelectedSourceGainChanged;
         _activeGainSources.Clear();
 
-        if (_packetChannel is not null)
-        {
-            _packetChannel.Writer.TryComplete();
-            _packetChannel = null;
-        }
+        var packetChannel = _packetChannel;
+        _packetChannel = null;
+        packetChannel?.Writer.TryComplete();
 
-        if (_streamCancellation is not null)
+        var streamCancellation = _streamCancellation;
+        _streamCancellation = null;
+        if (streamCancellation is not null)
         {
-            await _streamCancellation.CancelAsync();
+            await streamCancellation.CancelAsync();
             if (_streamTask is not null)
             {
                 try { await _streamTask.ConfigureAwait(false); }
-                catch (OperationCanceledException) { }
+                catch (Exception exception) when (exception is OperationCanceledException or ObjectDisposedException) { }
             }
 
-            _streamCancellation.Dispose();
-            _streamCancellation = null;
-            _streamTask = null;
+            streamCancellation.Dispose();
         }
+        _streamTask = null;
 
         _encoder?.Dispose();
         _encoder = null;
 
-        if (_sessionClient is not null)
+        var sessionClient = _sessionClient;
+        _sessionClient = null;
+        if (sessionClient is not null)
         {
-            _sessionClient.ConnectionClosed -= OnConnectionClosed;
-            _sessionClient.ParticipantJoined -= OnParticipantJoined;
-            _sessionClient.ParticipantLeft -= OnParticipantLeft;
-            _sessionClient.SessionEnded -= OnSessionEnded;
-            await _sessionClient.DisposeAsync();
-            _sessionClient = null;
+            sessionClient.ConnectionClosed -= OnConnectionClosed;
+            sessionClient.ParticipantJoined -= OnParticipantJoined;
+            sessionClient.ParticipantLeft -= OnParticipantLeft;
+            sessionClient.SessionEnded -= OnSessionEnded;
+            try { await sessionClient.DisposeAsync(); }
+            catch (Exception exception) { cleanupError ??= exception; }
         }
+
+        if (cleanupError is not null)
+            throw cleanupError;
     }
 
     private void RefreshCommands()
