@@ -91,7 +91,7 @@ public sealed class PeerKeyAgreement : IDisposable
         var transcript = BuildTranscript(LocalOffer, remoteOffer);
         var salt = SHA256.HashData(transcript);
         var info = Encoding.UTF8.GetBytes("ListenTogether/peer-key-agreement/v1");
-        var material = new byte[136]; // confirmation key (32) + two directional key/prefix pairs (72 each)
+        var material = new byte[104]; // confirmation key (32) + two directional key/prefix pairs (36 each)
         try
         {
             HKDF.DeriveKey(HashAlgorithmName.SHA256, sharedSecret, material, salt, info);
