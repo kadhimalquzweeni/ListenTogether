@@ -27,3 +27,8 @@ Receivers enforce a 64-packet sliding replay window. Authentication must succeed
 ## Deployment constraint
 
 A self-hosted STUN/signalling/relay service must be reachable from the public internet to support arbitrary users without router configuration. Hosting the service on a PC behind a typical home NAT is not sufficient by itself. A relay fallback requires a publicly reachable server; STUN alone is not a relay.
+
+
+### Automatic per-peer key negotiation
+
+`PeerKeyNegotiationCoordinator` maintains a separate ECDH agreement for every remote SignalR connection. It starts negotiation with existing peers on `SessionJoined`, and with later arrivals on `ParticipantJoined`. Each peer is considered secured only after the transcript hash and HMAC key-confirmation proof both verify. Proofs arriving before local offer processing are held until the agreement is ready. Peer key material is disposed and zeroed when that participant leaves, the session ends, the signalling connection closes, or the coordinator is disposed. Consumers must keep the coordinator alive for the session and must not dispose a secured result while its key material is in use.
