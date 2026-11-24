@@ -61,7 +61,7 @@ Both clients must use the same reachable signalling URL. For local development, 
 
 ## Networking and testing
 
-See [Networking architecture](docs/NETWORKING_ARCHITECTURE.md) for the connection model and [Manual testing](docs/MANUAL_TESTING.md) for LAN, multi-listener and internet test steps. Deployment requirements are covered in [Relay deployment](docs/DEPLOYMENT.md).
+See [Networking architecture](docs/NETWORKING_ARCHITECTURE.md) for the connection model and [Manual testing](docs/MANUAL_TESTING.md) for LAN, multi-listener and internet test steps. Deployment requirements are covered in [Relay deployment](docs/DEPLOYMENT.md). To host the signalling and STUN services on a Windows home PC, follow [Home PC hosting](docs/HOME_PC_HOSTING.md).
 
 ## Important behaviour and limitations
 
