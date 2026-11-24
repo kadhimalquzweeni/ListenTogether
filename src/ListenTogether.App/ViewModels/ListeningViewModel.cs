@@ -128,8 +128,6 @@ public sealed class ListeningViewModel : INotifyPropertyChanged, IAsyncDisposabl
                     _udpTransport.PeerConnected += OnDirectPeerConnected;
                     _udpTransport.AudioPacketReceived += OnDirectAudioPacketReceived;
                     await _udpTransport.StartAsync();
-                    _jitterCancellation = new CancellationTokenSource();
-                    _jitterTask = DrainJitterBufferAsync(_jitterCancellation.Token);
                 }
                 catch (Exception exception)
                 {
@@ -141,6 +139,7 @@ public sealed class ListeningViewModel : INotifyPropertyChanged, IAsyncDisposabl
                     StatusMessage = $"UDP discovery unavailable; audio will use the SignalR relay. {exception.Message}";
                 }
 
+                StartJitterBuffer();
                 HostDisplayName = result.HostDisplayName;
                 ParticipantCount = result.Participants.Count;
                 IsConnected = true;
@@ -257,6 +256,13 @@ public sealed class ListeningViewModel : INotifyPropertyChanged, IAsyncDisposabl
     private void OnDirectAudioPacketReceived(string peerConnectionId, byte[] packet, ulong sequence)
         => _jitterBuffer.TryEnqueue(sequence, packet);
 
+    private void StartJitterBuffer()
+    {
+        _jitterBuffer.Clear();
+        _jitterCancellation = new CancellationTokenSource();
+        _jitterTask = DrainJitterBufferAsync(_jitterCancellation.Token);
+    }
+
     private async Task DrainJitterBufferAsync(CancellationToken cancellationToken)
     {
         try
@@ -265,7 +271,7 @@ public sealed class ListeningViewModel : INotifyPropertyChanged, IAsyncDisposabl
             while (await timer.WaitForNextTickAsync(cancellationToken).ConfigureAwait(false))
             {
                 foreach (var frame in _jitterBuffer.DrainReady())
-                    OnAudioPacketReceived(frame.Payload, frame.Sequence <= long.MaxValue ? (long)frame.Sequence : 0);
+                    PlayAudioPacket(frame.Payload);
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -294,6 +300,13 @@ public sealed class ListeningViewModel : INotifyPropertyChanged, IAsyncDisposabl
     }
 
     private void OnAudioPacketReceived(byte[] packet, long sequence)
+    {
+        if (sequence <= 0)
+            return;
+        _jitterBuffer.TryEnqueue((ulong)sequence, packet);
+    }
+
+    private void PlayAudioPacket(byte[] packet)
     {
         try
         {
