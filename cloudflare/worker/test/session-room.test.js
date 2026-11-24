@@ -113,6 +113,51 @@ test("host disconnect ends room and notifies listeners", async () => {
   assert.equal(listener.closed.code, 4001);
 });
 
+test("listener leaving notifies the host and frees the connection", async () => {
+  const ctx = new FakeContext(), room = new SessionRoom(ctx, {});
+  const host = await connect(room, ctx);
+  const created = completion(await invoke(room, host, "CreateSession", ["Host"]));
+  const listener = await connect(room, ctx);
+  await invoke(room, listener, "JoinSession", [created.result.code, "Listener"]);
+  host.takeMessages();
+
+  await invoke(room, listener, "LeaveSession", []);
+  const event = host.takeMessages()[0];
+  assert.equal(event.target, "ParticipantLeft");
+  assert.equal(event.arguments[0].displayName, "Listener");
+  assert.equal(listener.deserializeAttachment().code, null);
+});
+
+test("host leaving ends the room for every participant", async () => {
+  const ctx = new FakeContext(), room = new SessionRoom(ctx, {});
+  const host = await connect(room, ctx);
+  const created = completion(await invoke(room, host, "CreateSession", ["Host"]));
+  const listener = await connect(room, ctx);
+  await invoke(room, listener, "JoinSession", [created.result.code, "Listener"]);
+  host.takeMessages();
+  listener.takeMessages();
+
+  await invoke(room, host, "LeaveSession", []);
+  assert.equal(host.deserializeAttachment().code, null);
+  assert.equal(listener.deserializeAttachment().code, null);
+  assert.equal(host.takeMessages().some(message => message.target === "SessionEnded"), true);
+  assert.equal(listener.takeMessages()[0].target, "SessionEnded");
+});
+
+test("audio sequence replay is rejected", async () => {
+  const ctx = new FakeContext(), room = new SessionRoom(ctx, {});
+  const host = await connect(room, ctx);
+  const created = completion(await invoke(room, host, "CreateSession", ["Host"]));
+  const listener = await connect(room, ctx);
+  await invoke(room, listener, "JoinSession", [created.result.code, "Listener"]);
+  const packet = Buffer.from([1, 2, 3]).toString("base64");
+
+  room.invoke(host, "SendAudioPacketBatch", [[packet], [1]]);
+  assert.throws(
+    () => room.invoke(host, "SendAudioPacketBatch", [[packet], [1]]),
+    /replayed or is out of order/
+  );
+});
 test("room enforces sixteen participants", async () => {
   const ctx = new FakeContext(), room = new SessionRoom(ctx, {});
   const host = await connect(room, ctx);
