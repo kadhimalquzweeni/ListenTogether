@@ -59,8 +59,8 @@ public sealed class UdpSecurePacketCodecTests
     {
         using var sender = new UdpSecurePacketCodec(Key, Prefix);
         using var receiver = new UdpSecurePacketCodec(Key, Prefix);
-        var later = sender.Encrypt(SessionId, UdpPacketType.Audio, 12, [12]);
         var earlier = sender.Encrypt(SessionId, UdpPacketType.Audio, 10, [10]);
+        var later = sender.Encrypt(SessionId, UdpPacketType.Audio, 12, [12]);
         Assert.True(receiver.TryDecrypt(later, SessionId, out _));
         Assert.True(receiver.TryDecrypt(earlier, SessionId, out _));
         Assert.False(receiver.TryDecrypt(earlier, SessionId, out _));
