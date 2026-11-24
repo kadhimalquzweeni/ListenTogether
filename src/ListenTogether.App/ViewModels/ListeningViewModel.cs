@@ -118,6 +118,8 @@ public sealed class ListeningViewModel : INotifyPropertyChanged, IAsyncDisposabl
                     return;
                 }
 
+                StartJitterBuffer();
+
                 try
                 {
                     await _peerCandidates.StartAsync(
@@ -139,7 +141,6 @@ public sealed class ListeningViewModel : INotifyPropertyChanged, IAsyncDisposabl
                     StatusMessage = $"UDP discovery unavailable; audio will use the SignalR relay. {exception.Message}";
                 }
 
-                StartJitterBuffer();
                 HostDisplayName = result.HostDisplayName;
                 ParticipantCount = result.Participants.Count;
                 IsConnected = true;
