@@ -33,6 +33,46 @@ public sealed class SessionRegistryTests
     }
 
     [Fact]
+    public void CreateAndJoinSession_ShareStableNonEmptySessionId()
+    {
+        var registry = new SessionRegistry();
+        var invitation = registry.CreateSession("host-1", "Host");
+
+        var joined = registry.JoinSession("listener-1", invitation.Code, "Listener");
+
+        Assert.NotEqual(Guid.Empty, invitation.SessionId);
+        Assert.Equal(invitation.SessionId, joined.Invitation.SessionId);
+    }
+
+    [Fact]
+    public void TryGetPeerSession_RequiresTwoDistinctMembersOfSameSession()
+    {
+        var registry = new SessionRegistry();
+        var first = registry.CreateSession("host-1", "Host");
+        registry.JoinSession("listener-1", first.Code, "Listener");
+        var other = registry.CreateSession("host-2", "Other host");
+
+        Assert.True(registry.TryGetPeerSession(first.SessionId, "host-1", "listener-1"));
+        Assert.True(registry.TryGetPeerSession(first.SessionId, "listener-1", "host-1"));
+        Assert.False(registry.TryGetPeerSession(first.SessionId, "host-1", "host-2"));
+        Assert.False(registry.TryGetPeerSession(other.SessionId, "host-1", "listener-1"));
+        Assert.False(registry.TryGetPeerSession(first.SessionId, "host-1", "host-1"));
+        Assert.False(registry.TryGetPeerSession(Guid.Empty, "host-1", "listener-1"));
+    }
+
+    [Fact]
+    public void TryGetPeerSession_StopsAuthorisingPeerAfterDeparture()
+    {
+        var registry = new SessionRegistry();
+        var invitation = registry.CreateSession("host-1", "Host");
+        registry.JoinSession("listener-1", invitation.Code, "Listener");
+
+        Assert.True(registry.TryGetPeerSession(invitation.SessionId, "host-1", "listener-1"));
+        registry.RemoveConnection("listener-1");
+        Assert.False(registry.TryGetPeerSession(invitation.SessionId, "host-1", "listener-1"));
+    }
+
+    [Fact]
     public void JoinSession_RejectsUnknownCode()
     {
         var registry = new SessionRegistry();
