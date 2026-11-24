@@ -32,10 +32,10 @@ public sealed class SessionRegistry
             do { code = GenerateCode(); }
             while (_sessions.ContainsKey(code));
 
-            var state = new SessionState(code, connectionId, displayName);
+            var state = new SessionState(code, connectionId, displayName, Guid.NewGuid());
             _sessions.Add(code, state);
             _connectionSessions.Add(connectionId, code);
-            return new SessionInvitation(code);
+            return new SessionInvitation(code, SessionId: state.SessionId);
         }
     }
 
@@ -61,10 +61,34 @@ public sealed class SessionRegistry
             _connectionSessions.Add(connectionId, code);
 
             return new SessionJoinResult(
-                new SessionInvitation(code),
+                new SessionInvitation(code, SessionId: session.SessionId),
                 session.HostDisplayName,
                 Array.AsReadOnly(session.Participants.Values.ToArray()),
                 participant);
+        }
+    }
+
+    /// <summary>
+    /// Confirms that two distinct SignalR connections are active members of the
+    /// same session and returns that session's stable identifier.
+    /// </summary>
+    public bool TryGetPeerSession(Guid sessionId, string fromConnectionId, string toConnectionId)
+    {
+        if (sessionId == Guid.Empty ||
+            string.IsNullOrWhiteSpace(fromConnectionId) ||
+            string.IsNullOrWhiteSpace(toConnectionId) ||
+            string.Equals(fromConnectionId, toConnectionId, StringComparison.Ordinal))
+            return false;
+
+        lock (_sync)
+        {
+            return _connectionSessions.TryGetValue(fromConnectionId, out var fromCode) &&
+                _connectionSessions.TryGetValue(toConnectionId, out var toCode) &&
+                string.Equals(fromCode, toCode, StringComparison.Ordinal) &&
+                _sessions.TryGetValue(fromCode, out var session) &&
+                session.SessionId == sessionId &&
+                session.Participants.ContainsKey(fromConnectionId) &&
+                session.Participants.ContainsKey(toConnectionId);
         }
     }
 
@@ -180,9 +204,10 @@ public sealed class SessionRegistry
             throw new ArgumentException("A SignalR connection ID is required.", nameof(connectionId));
     }
 
-    private sealed class SessionState(string code, string hostConnectionId, string hostDisplayName)
+    private sealed class SessionState(string code, string hostConnectionId, string hostDisplayName, Guid sessionId)
     {
         public string Code { get; } = code;
+        public Guid SessionId { get; } = sessionId;
         public string HostConnectionId { get; } = hostConnectionId;
         public string HostDisplayName { get; } = hostDisplayName;
         public Dictionary<string, SessionParticipant> Participants { get; } =
