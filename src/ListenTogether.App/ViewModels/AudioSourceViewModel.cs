@@ -24,6 +24,7 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
     private SignalRSessionClient? _sessionClient;
     private PeerKeyNegotiationCoordinator? _peerNegotiation;
     private UdpPeerCandidateCoordinator? _peerCandidates;
+    private UdpPeerTransportCoordinator? _udpTransport;
     private OpusAudioEncoder? _encoder;
     private Channel<EncodedAudioPacket>? _packetChannel;
     private CancellationTokenSource? _streamCancellation;
@@ -216,9 +217,18 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
                 try
                 {
                     await candidateCoordinator.StartAsync(_serverUri, stunTimeout: TimeSpan.FromSeconds(2));
+                    _udpTransport = new UdpPeerTransportCoordinator(
+                        candidateCoordinator, peerNegotiation, _sessionClient.SessionId);
+                    _udpTransport.PeerConnected += OnDirectPeerConnected;
+                    await _udpTransport.StartAsync();
                 }
                 catch (Exception exception)
                 {
+                    if (_udpTransport is not null)
+                    {
+                        await _udpTransport.DisposeAsync();
+                        _udpTransport = null;
+                    }
                     candidateCoordinator.Dispose();
                     _peerCandidates = null;
                     StatusMessage = $"UDP discovery unavailable; audio will use the SignalR relay. {exception.Message}";
@@ -253,9 +263,9 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
                     _captureSession.SetGain(item.Source.Id, item.EffectiveGain);
 
                 IsCapturing = true;
-                StatusMessage = _peerCandidates is null
+                StatusMessage = _udpTransport is null
                     ? $"Sharing audio. Invite code: {SessionCode} (relay mode)."
-                    : $"Sharing audio. Invite code: {SessionCode}. UDP candidates exchanged; audio remains relayed.";
+                    : $"Sharing audio. Invite code: {SessionCode}. Direct UDP is being negotiated; relay fallback is active.";
             }
             catch (Exception exception)
             {
@@ -379,7 +389,16 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
                 if (client is null)
                     break;
 
-                await client.SendAudioPacketAsync(packet.Payload, packet.Sequence, cancellationToken).ConfigureAwait(false);
+                IReadOnlyCollection<string> directRecipients = Array.Empty<string>();
+                var transport = _udpTransport;
+                if (transport is not null)
+                {
+                    directRecipients = await transport.SendAudioToConnectedPeersAsync(
+                        packet.Payload, cancellationToken).ConfigureAwait(false);
+                }
+
+                await client.SendAudioPacketAsync(
+                    packet.Payload, packet.Sequence, directRecipients, cancellationToken).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -449,7 +468,10 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
         });
 
     private void OnPeerSecured(string peerConnectionId, PeerKeyAgreementResult result)
-        => NotifyOnUi(() => StatusMessage = $"A secure peer link has been established ({_peerNegotiation?.SecuredPeers.Count ?? 0} connected peer(s)). Audio is still using the relay.");
+        => NotifyOnUi(() => StatusMessage = $"A secure peer link has been established with {peerConnectionId}; direct UDP connectivity is being checked.");
+
+    private void OnDirectPeerConnected(string peerConnectionId, System.Net.IPEndPoint endpoint)
+        => NotifyOnUi(() => StatusMessage = $"Direct UDP audio connection established with {peerConnectionId}.");
 
     private void OnParticipantJoined(SessionParticipant participant)
         => NotifyOnUi(() =>
@@ -520,6 +542,14 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
 
         _encoder?.Dispose();
         _encoder = null;
+
+        if (_udpTransport is not null)
+        {
+            _udpTransport.PeerConnected -= OnDirectPeerConnected;
+            try { await _udpTransport.DisposeAsync(); }
+            catch (Exception exception) { cleanupError ??= exception; }
+            _udpTransport = null;
+        }
 
         _peerCandidates?.Dispose();
         _peerCandidates = null;
