@@ -62,11 +62,21 @@ public sealed class UdpCandidateGatherer(StunClient? stunClient = null) : IUdpCa
                 .Distinct()
                 .ToList();
 
-            var mapped = await _stunClient.GetMappedEndPointAsync(
-                socket,
-                stunServer,
-                stunTimeout ?? TimeSpan.FromSeconds(3),
-                cancellationToken).ConfigureAwait(false);
+            IPEndPoint mapped;
+            try
+            {
+                mapped = await _stunClient.GetMappedEndPointAsync(
+                    socket,
+                    stunServer,
+                    stunTimeout ?? TimeSpan.FromSeconds(3),
+                    cancellationToken).ConfigureAwait(false);
+            }
+            catch (TimeoutException) when (candidates.Count > 0)
+            {
+                // Host candidates remain useful for same-LAN peers even when
+                // the STUN endpoint is blocked or temporarily unavailable.
+                return new UdpCandidateSet(socket, candidates.AsReadOnly());
+            }
 
             var reflexive = new PeerCandidate(
                 mapped.Address.ToString(),
