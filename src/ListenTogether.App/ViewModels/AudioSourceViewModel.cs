@@ -22,6 +22,7 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
     private readonly SemaphoreSlim _sessionLifecycle = new(1, 1);
     private AudioCaptureMixerSession? _captureSession;
     private SignalRSessionClient? _sessionClient;
+    private PeerKeyNegotiationCoordinator? _peerNegotiation;
     private OpusAudioEncoder? _encoder;
     private Channel<EncodedAudioPacket>? _packetChannel;
     private CancellationTokenSource? _streamCancellation;
@@ -201,6 +202,8 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
             {
                 _sessionClient = _sessionClientFactory.Create(_serverUri);
                 _sessionClient.ConnectionClosed += OnConnectionClosed;
+                _peerNegotiation = new PeerKeyNegotiationCoordinator(_sessionClient);
+                _peerNegotiation.PeerSecured += OnPeerSecured;
                 _sessionClient.ParticipantJoined += OnParticipantJoined;
                 _sessionClient.ParticipantLeft += OnParticipantLeft;
                 _sessionClient.SessionEnded += OnSessionEnded;
@@ -430,6 +433,9 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
             _ = StopAsync();
         });
 
+    private void OnPeerSecured(string peerConnectionId, PeerKeyAgreementResult result)
+        => NotifyOnUi(() => StatusMessage = $"A secure peer link has been established ({_peerNegotiation?.SecuredPeers.Count ?? 0} connected peer(s)). Audio is still using the relay.");
+
     private void OnParticipantJoined(SessionParticipant participant)
         => NotifyOnUi(() =>
         {
@@ -499,6 +505,9 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
 
         _encoder?.Dispose();
         _encoder = null;
+
+        _peerNegotiation?.Dispose();
+        _peerNegotiation = null;
 
         var sessionClient = _sessionClient;
         _sessionClient = null;
