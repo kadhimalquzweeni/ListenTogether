@@ -32,7 +32,7 @@ You need:
 - A Linux server or VM with Docker Engine and Docker Compose.
 - A DNS name pointing to the server.
 - Inbound TCP ports 80 and 443 available to Caddy.
-- Inbound UDP port 3478 available directly to the relay container for STUN.
+- Inbound UDP port 3478 available directly to the signalling/STUN server container for STUN.
 
 Copy `.env.example` to `.env` and set `LISTENTOGETHER_DOMAIN` to your public DNS name and `ACME_EMAIL` to an address for certificate notifications. Then run:
 
@@ -40,7 +40,7 @@ Copy `.env.example` to `.env` and set `LISTENTOGETHER_DOMAIN` to your public DNS
 docker compose -f docker-compose.production.yml up --build -d
 ```
 
-Caddy obtains and renews the TLS certificate and proxies WebSocket connections to the relay container. Docker publishes UDP 3478 directly to the STUN service; Caddy does not proxy STUN. In the desktop app, use the public URL:
+Caddy obtains and renews the TLS certificate and proxies WebSocket connections to the signalling server container. Docker publishes UDP 3478 directly to the STUN service; Caddy does not proxy STUN. In the desktop app, use the public URL:
 
 `https://your-domain.example`
 
