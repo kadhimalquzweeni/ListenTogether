@@ -12,6 +12,7 @@ public sealed class PeerKeyNegotiationCoordinator : IDisposable
 {
     private readonly IPeerKeySignalling _session;
     private readonly ConcurrentDictionary<string, PeerState> _peers = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, byte> _pendingPeers = new(StringComparer.Ordinal);
     private bool _disposed;
 
     public PeerKeyNegotiationCoordinator(IPeerKeySignalling session)
@@ -62,6 +63,17 @@ public sealed class PeerKeyNegotiationCoordinator : IDisposable
                 throw;
             }
         }
+    }
+
+    /// <summary>
+    /// Retries participants observed before the local session identity was ready.
+    /// This closes the small race where a listener joins while the host's create
+    /// request is still returning its session and connection IDs.
+    /// </summary>
+    public Task BeginPendingPeersAsync(CancellationToken cancellationToken = default)
+    {
+        ThrowIfDisposed();
+        return BeginPeersAsync(_pendingPeers.Keys.ToArray(), cancellationToken);
     }
 
     /// <summary>Starts negotiations with every other participant in the join result.</summary>
@@ -263,14 +275,34 @@ public sealed class PeerKeyNegotiationCoordinator : IDisposable
 
     private void OnParticipantJoined(SessionParticipant participant)
     {
-        if (!string.IsNullOrWhiteSpace(participant.ConnectionId))
-            _ = BeginPeerSafelyAsync(participant.ConnectionId);
+        if (string.IsNullOrWhiteSpace(participant.ConnectionId))
+            return;
+
+        if (_session.SessionId == Guid.Empty || string.IsNullOrWhiteSpace(_session.ConnectionId))
+        {
+            _pendingPeers.TryAdd(participant.ConnectionId, 0);
+            return;
+        }
+
+        _ = BeginPeerSafelyAsync(participant.ConnectionId);
     }
 
     private async Task BeginPeerSafelyAsync(string connectionId)
     {
-        try { await BeginPeerAsync(connectionId).ConfigureAwait(false); }
-        catch (Exception) { RemovePeer(connectionId); }
+        try
+        {
+            await BeginPeerAsync(connectionId).ConfigureAwait(false);
+            _pendingPeers.TryRemove(connectionId, out _);
+        }
+        catch (InvalidOperationException) when (_session.SessionId == Guid.Empty ||
+            string.IsNullOrWhiteSpace(_session.ConnectionId))
+        {
+            _pendingPeers.TryAdd(connectionId, 0);
+        }
+        catch (Exception)
+        {
+            RemovePeer(connectionId);
+        }
     }
 
     private void OnParticipantLeft(SessionParticipant participant)
@@ -285,15 +317,18 @@ public sealed class PeerKeyNegotiationCoordinator : IDisposable
 
     private void RemovePeer(string? peerId)
     {
-        if (peerId is null || !_peers.TryRemove(peerId, out var state))
+        if (peerId is null)
             return;
-        state.Dispose();
+        _pendingPeers.TryRemove(peerId, out _);
+        if (_peers.TryRemove(peerId, out var state))
+            state.Dispose();
     }
 
     private void ClearPeers()
     {
         foreach (var peerId in _peers.Keys)
             RemovePeer(peerId);
+        _pendingPeers.Clear();
     }
 
     private void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(_disposed, this);
