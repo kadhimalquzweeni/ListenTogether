@@ -28,8 +28,8 @@ Listeners join with an eight-character invite code and hear the host's live mix.
 
 - Windows 10 version 2004 (build 19041) or later for per-application capture.
 - Windows 10/11.
-- .NET 10 SDK.
-- Visual Studio 2022 with the .NET desktop development workload.
+- **Packaged Windows x64 release:** Windows 10/11 x64; the self-contained app does not require a separately installed .NET runtime.
+- **Build from source:** .NET 10 SDK and Visual Studio 2022 with the .NET desktop development workload.
 
 ### Relay server
 
