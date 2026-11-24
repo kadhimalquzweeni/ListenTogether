@@ -40,7 +40,7 @@ The coordinator uses the `IPeerKeySignalling` abstraction. Automated tests exerc
 
 `UdpCandidateGatherer` binds one IPv4 UDP socket, gathers active local interface addresses, and asks the configured STUN endpoint for its server-reflexive mapping. `UdpPeerCandidateCoordinator` owns that candidate set for the session, publishes each candidate through SignalR, tracks remote candidates by server-assigned peer connection ID, deduplicates repeats, and republishes local candidates when another participant joins. The host and listener view models start this process after session creation/join and dispose the retained socket during teardown.
 
-Candidate discovery is optional: if DNS/STUN discovery fails or times out, session setup continues using the existing SignalR audio relay. Candidate exchange is not yet a direct media connection; no UDP connectivity checks or UDP audio frames are sent at this stage. The current STUN implementation and gatherer are IPv4-only.
+Candidate discovery is optional. If the STUN request times out but local interfaces were found, the gatherer keeps the bound socket and publishes host candidates so same-LAN peers can still connect. If DNS resolution fails or no usable local candidates exist, session setup continues using the SignalR relay. The current STUN implementation and gatherer are IPv4-only.
 
 
 ### Direct UDP media and fallback
