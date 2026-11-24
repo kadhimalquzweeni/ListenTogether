@@ -28,7 +28,7 @@ Listeners join with an eight-character invite code and hear the host's live mix.
 
 ## Intended user experience
 
-The initial deployment is intended for a private setup between two friends. The host can run the signalling and STUN services on their own Windows PC, detect their current public IPv4 at startup, and share that IP address plus the session invite code. The listener enters those details in the desktop app. No domain or dynamic DNS provider is required for this setup.
+The initial deployment is intended for a private setup between two friends. The host can run the signalling and STUN services on their own Windows PC, detect their current public IPv4 at startup, and share that IP address plus the session invite code. The host copies the combined invite details from the audio-sharing window; the listener pastes them into the desktop app to fill in the server address and invite code. No domain or dynamic DNS provider is required for this setup.
 
 The networking model follows the same broad pattern used by low-latency peer applications: SignalR handles session signalling, STUN discovers UDP mappings, peers attempt encrypted direct UDP, and the current implementation relays audio to listeners without a working direct path. The direct UDP media path and per-listener fallback are implemented. STUN and the signalling/relay service still need to be publicly reachable for users on arbitrary networks.
 
