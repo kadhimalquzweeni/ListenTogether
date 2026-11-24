@@ -76,7 +76,7 @@ public sealed class MainViewModelHostingTests : IDisposable
         public Task<HostReadinessResult> CheckAsync(Uri serverUri, CancellationToken cancellationToken = default)
         {
             Called = true;
-            Assert.Equal("http://localhost:5000", serverUri.ToString());
+            Assert.Equal(new Uri("http://localhost:5000"), serverUri);
             return Task.FromResult(result);
         }
     }
