@@ -7,7 +7,7 @@ The host can share either:
 - **All system audio** from the default Windows output device.
 - **Selected applications**, with multiple apps mixed together and individual volume/mute controls.
 
-Listeners join with an eight-character invite code and hear the host's live mix.
+Listeners join with an eight-character invite code and hear the host's live mix. ListenTogether captures audio rendered by Windows; it does not use the Spotify API or require Spotify Premium. Whether a particular app stream is capturable still depends on Windows and that app's own protected-media path.
 
 ## Current capabilities
 
