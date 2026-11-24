@@ -15,6 +15,7 @@ public sealed class ListeningViewModel : INotifyPropertyChanged, IAsyncDisposabl
     private WasapiAudioPlayback? _playback;
     private int _isDisposed;
     private readonly object _decodeLock = new();
+    private readonly SemaphoreSlim _lifecycle = new(1, 1);
     private readonly string _sessionCode;
     private bool _isConnecting;
     private bool _isConnected;
@@ -82,32 +83,58 @@ public sealed class ListeningViewModel : INotifyPropertyChanged, IAsyncDisposabl
 
     public async Task ConnectAsync()
     {
-        if (IsConnecting || IsConnected)
+        if (Volatile.Read(ref _isDisposed) == 1)
             return;
+        try { await _lifecycle.WaitAsync(); }
+        catch (ObjectDisposedException) { return; }
 
-        IsConnecting = true;
-        StatusMessage = "Joining session…";
         try
         {
-            _playback = new WasapiAudioPlayback();
-            var result = await _client.JoinSessionAsync(_sessionCode, _displayName);
-            HostDisplayName = result.HostDisplayName;
-            ParticipantCount = result.Participants.Count;
-            IsConnected = true;
-            _playback.Start();
-            StatusMessage = $"You're listening with {HostDisplayName}.";
-        }
-        catch (Exception exception)
-        {
-            StatusMessage = $"Couldn't join the session: {exception.Message}";
+            if (Volatile.Read(ref _isDisposed) == 1 || IsConnecting || IsConnected)
+                return;
+
+            IsConnecting = true;
+            StatusMessage = "Joining session…";
+            try
+            {
+                _playback = new WasapiAudioPlayback();
+                var result = await _client.JoinSessionAsync(_sessionCode, _displayName);
+                if (Volatile.Read(ref _isDisposed) == 1)
+                    return;
+
+                HostDisplayName = result.HostDisplayName;
+                ParticipantCount = result.Participants.Count;
+                IsConnected = true;
+                _playback.Start();
+                StatusMessage = $"You're listening with {HostDisplayName}.";
+            }
+            catch (Exception exception)
+            {
+                StatusMessage = $"Couldn't join the session: {exception.Message}";
+            }
+            finally
+            {
+                IsConnecting = false;
+            }
         }
         finally
         {
-            IsConnecting = false;
+            _lifecycle.Release();
         }
     }
 
     public async Task LeaveAsync()
+    {
+        if (Volatile.Read(ref _isDisposed) == 1)
+            return;
+        try { await _lifecycle.WaitAsync(); }
+        catch (ObjectDisposedException) { return; }
+
+        try { await LeaveCoreAsync(); }
+        finally { _lifecycle.Release(); }
+    }
+
+    private async Task LeaveCoreAsync()
     {
         if (!IsConnected && !_client.IsConnected)
             return;
@@ -127,15 +154,16 @@ public sealed class ListeningViewModel : INotifyPropertyChanged, IAsyncDisposabl
         if (Interlocked.Exchange(ref _isDisposed, 1) == 1)
             return;
 
-        _client.AudioPacketReceived -= OnAudioPacketReceived;
-        _client.ParticipantJoined -= OnParticipantJoined;
-        _client.ParticipantLeft -= OnParticipantLeft;
-        _client.SessionEnded -= OnSessionEnded;
-        _client.ConnectionClosed -= OnConnectionClosed;
-
-        try { await LeaveAsync(); }
-        finally
+        await _lifecycle.WaitAsync();
+        try
         {
+            _client.AudioPacketReceived -= OnAudioPacketReceived;
+            _client.ParticipantJoined -= OnParticipantJoined;
+            _client.ParticipantLeft -= OnParticipantLeft;
+            _client.SessionEnded -= OnSessionEnded;
+            _client.ConnectionClosed -= OnConnectionClosed;
+
+            await LeaveCoreAsync();
             _decoder.Dispose();
             if (_playback is not null)
             {
@@ -143,6 +171,11 @@ public sealed class ListeningViewModel : INotifyPropertyChanged, IAsyncDisposabl
                 _playback = null;
             }
             await _client.DisposeAsync();
+        }
+        finally
+        {
+            _lifecycle.Release();
+            _lifecycle.Dispose();
         }
     }
 
