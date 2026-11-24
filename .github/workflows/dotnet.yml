@@ -73,3 +73,6 @@ jobs:
         run: npm test --prefix cloudflare/worker
       - name: Validate edge worker JavaScript
         run: node --check cloudflare/worker/src/index.js
+      - name: Validate Cloudflare Worker bundle
+        run: npx wrangler@latest deploy --dry-run
+        working-directory: cloudflare/worker
