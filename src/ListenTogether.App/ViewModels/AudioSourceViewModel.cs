@@ -112,7 +112,7 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
                 ApplicationSources.Add(item);
             }
 
-            StatusMessage = $"Found {ApplicationSources.Count} applications. Choose what you want to share.";
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(AvailableApplicationCount)));\n            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SelectedApplicationCount)));\n            StatusMessage = $"Found {ApplicationSources.Count} applications. Choose what you want to share.";
         }
         catch (Exception exception)
         {
