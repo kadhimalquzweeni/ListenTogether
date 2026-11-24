@@ -94,6 +94,7 @@ public sealed class UdpPeerTransportCoordinator : IAsyncDisposable
         if (socket is null)
             return Array.Empty<string>();
 
+        var payload = opusPayload.ToArray();
         var sent = new List<string>();
         foreach (var pair in _peers)
         {
@@ -108,7 +109,7 @@ public sealed class UdpPeerTransportCoordinator : IAsyncDisposable
             try
             {
                 var datagram = pair.Value.CreatePacket(
-                    _sessionId, UdpPacketType.Audio, opusPayload.Span);
+                    _sessionId, UdpPacketType.Audio, payload);
                 await socket.SendAsync(datagram, endpoint, cancellationToken).ConfigureAwait(false);
                 sent.Add(pair.Key);
             }
@@ -321,7 +322,7 @@ public sealed class UdpPeerTransportCoordinator : IAsyncDisposable
             var socket = _candidates.LocalCandidateSet?.TransportSocket;
             if (socket is null || Volatile.Read(ref _disposed) == 1)
                 return;
-            var datagram = state.CreatePacket(_sessionId, type, payload.Span);
+            var datagram = state.CreatePacket(_sessionId, type, payload.ToArray());
             await socket.SendAsync(datagram, endpoint, _cancellation?.Token ?? CancellationToken.None)
                 .ConfigureAwait(false);
         }
