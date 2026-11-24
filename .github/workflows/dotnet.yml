@@ -21,3 +21,10 @@ jobs:
         run: dotnet build ListenTogether.sln --configuration Release --no-restore
       - name: Test
         run: dotnet test ListenTogether.sln --configuration Release --no-build --no-restore
+
+  container:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build relay container
+        run: docker build --file src/ListenTogether.Server/Dockerfile --tag listen-together-server:test .
