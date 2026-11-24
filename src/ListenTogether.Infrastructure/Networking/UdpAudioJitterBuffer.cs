@@ -61,7 +61,7 @@ public sealed class UdpAudioJitterBuffer
                 _expectedSequence = sequence;
             }
 
-            _pending.Add(sequence, new BufferedFrame(payload.ToArray(), timestamp));
+            _pending.Add(sequence, new BufferedFrame(payload.ToArray()));
             return true;
         }
     }
@@ -130,7 +130,7 @@ public sealed class UdpAudioJitterBuffer
         }
     }
 
-    private sealed record BufferedFrame(byte[] Payload, DateTimeOffset ReceivedAt);
+    private sealed record BufferedFrame(byte[] Payload);
 }
 
 public sealed record UdpAudioFrame(ulong Sequence, byte[] Payload);
