@@ -214,6 +214,7 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
                 var invitation = await _sessionClient.CreateSessionAsync(_displayName);
                 SessionCode = invitation.Code;
                 await peerNegotiation.BeginPendingPeersAsync();
+                StatusMessage = "Gathering local and STUN UDP candidates…";
                 await candidateCoordinator.StartAsync(_serverUri, stunTimeout: TimeSpan.FromSeconds(2));
                 _udpTransport = new UdpPeerTransportCoordinator(candidateCoordinator, peerNegotiation, _sessionClient.SessionId);
                 _udpTransport.PeerConnected += OnDirectPeerConnected;
