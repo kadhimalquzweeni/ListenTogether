@@ -14,6 +14,7 @@ public sealed class AudioCaptureMixerSession : IAsyncDisposable
     private readonly int _framesPerBlock;
     private readonly SemaphoreSlim _lifecycleLock = new(1, 1);
     private readonly List<IAudioCapture> _captures = [];
+    private readonly Dictionary<IAudioCapture, Action<AudioFrame>> _frameHandlers = [];
     private CancellationTokenSource? _clockCancellation;
     private Task? _clockTask;
     private PcmAudioMixer? _mixer;
@@ -63,7 +64,10 @@ public sealed class AudioCaptureMixerSession : IAsyncDisposable
                     var capture = await _captureFactory.CreateAsync(source, cancellationToken).ConfigureAwait(false);
                     _captures.Add(capture);
                     _mixer.AddSource(source.Id);
-                    capture.AudioFrameAvailable += OnAudioFrameAvailable;
+
+                    Action<AudioFrame> frameHandler = frame => OnAudioFrameAvailable(capture, frame);
+                    _frameHandlers.Add(capture, frameHandler);
+                    capture.AudioFrameAvailable += frameHandler;
                     capture.CaptureFaulted += OnCaptureFaulted;
                 }
 
@@ -147,11 +151,11 @@ public sealed class AudioCaptureMixerSession : IAsyncDisposable
         {
             while (await timer.WaitForNextTickAsync(cancellationToken).ConfigureAwait(false))
             {
-                if (_mixer is null)
+                var mixer = _mixer;
+                if (mixer is null)
                     break;
 
-                var frame = _mixer.Mix(_framesPerBlock);
-                NotifyMixedFrame(frame);
+                NotifyMixedFrame(mixer.Mix(_framesPerBlock));
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -164,12 +168,19 @@ public sealed class AudioCaptureMixerSession : IAsyncDisposable
         }
     }
 
-    private void OnAudioFrameAvailable(AudioFrame frame)
+    private void OnAudioFrameAvailable(IAudioCapture capture, AudioFrame frame)
     {
-        if (_mixer is null || !IsRunning)
+        if (!IsRunning)
             return;
 
-        var source = _captures.FirstOrDefault(capture => ReferenceEquals(capture, captureForCurrentCallback.Value));
+        try
+        {
+            _mixer?.PushFrame(capture.Source.Id, frame);
+        }
+        catch (Exception exception)
+        {
+            NotifyFault(exception);
+        }
     }
 
     private void OnCaptureFaulted(Exception exception) => NotifyFault(exception);
@@ -204,7 +215,9 @@ public sealed class AudioCaptureMixerSession : IAsyncDisposable
     {
         foreach (var capture in _captures)
         {
-            capture.AudioFrameAvailable -= OnAudioFrameAvailable;
+            if (_frameHandlers.Remove(capture, out var frameHandler))
+                capture.AudioFrameAvailable -= frameHandler;
+
             capture.CaptureFaulted -= OnCaptureFaulted;
             try { await capture.StopAsync().ConfigureAwait(false); }
             catch (Exception exception) { NotifyFault(exception); }
