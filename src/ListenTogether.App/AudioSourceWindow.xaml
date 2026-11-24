@@ -81,7 +81,7 @@
                 <Setter.Value>
                     <ControlTemplate TargetType="Slider">
                         <Grid Height="20" VerticalAlignment="Center">
-                            <Track x:Name="PART_Track" IsDirectionReversed="False" Minimum="{TemplateBinding Minimum}" Maximum="{TemplateBinding Maximum}" Value="{TemplateBinding Value}" />
+                            <Track x:Name="PART_Track" IsDirectionReversed="False" Minimum="{TemplateBinding Minimum}" Maximum="{TemplateBinding Maximum}" Value="{TemplateBinding Value}">
                                 <Track.DecreaseRepeatButton>
                                     <RepeatButton Command="{x:Static Slider.DecreaseLarge}"
                                                   CommandTarget="{Binding RelativeSource={RelativeSource TemplatedParent}}"
