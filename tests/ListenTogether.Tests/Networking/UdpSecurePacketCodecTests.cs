@@ -96,6 +96,18 @@ public sealed class UdpSecurePacketCodecTests
     }
 
     [Fact]
+    public void Encrypt_RejectsRepeatedOrDecreasingSequenceToPreventNonceReuse()
+    {
+        using var sender = new UdpSecurePacketCodec(Key, Prefix);
+        sender.Encrypt(SessionId, UdpPacketType.Audio, 5, [1]);
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            sender.Encrypt(SessionId, UdpPacketType.Audio, 5, [2]));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            sender.Encrypt(SessionId, UdpPacketType.Audio, 4, [3]));
+        sender.Encrypt(SessionId, UdpPacketType.Audio, 6, [4]);
+    }
+
+    [Fact]
     public void Constructor_RequiresAes256KeyAndFourByteNoncePrefix()
     {
         Assert.Throws<ArgumentException>(() => new UdpSecurePacketCodec(new byte[16], Prefix));
