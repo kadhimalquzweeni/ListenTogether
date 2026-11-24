@@ -21,10 +21,17 @@ jobs:
         run: dotnet build ListenTogether.sln --configuration Release --no-restore
       - name: Test
         run: dotnet test ListenTogether.sln --configuration Release --no-build --no-restore
+      - name: Publish Windows desktop app
+        run: dotnet publish src/ListenTogether.App/ListenTogether.App.csproj --configuration Release --runtime win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true --output artifacts/publish
 
   container:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Validate Docker Compose configuration
+        run: |
+          cp .env.example .env
+          docker compose config --quiet
+          docker compose -f docker-compose.production.yml config --quiet
       - name: Build relay container
         run: docker build --file src/ListenTogether.Server/Dockerfile --tag listen-together-server:test .
