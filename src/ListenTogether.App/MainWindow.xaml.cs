@@ -8,6 +8,15 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
-        DataContext = new MainViewModel();
+
+        var viewModel = new MainViewModel();
+        viewModel.CreateSessionRequested += OnCreateSessionRequested;
+        DataContext = viewModel;
+    }
+
+    private void OnCreateSessionRequested(object? sender, EventArgs e)
+    {
+        var window = new AudioSourceWindow { Owner = this };
+        window.ShowDialog();
     }
 }

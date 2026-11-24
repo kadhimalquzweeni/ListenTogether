@@ -8,7 +8,6 @@ public sealed class MainViewModel : INotifyPropertyChanged
 {
     private string _sessionCode = string.Empty;
     private string _statusMessage = "Create a session to share your audio, or join a friend's session.";
-    private bool _isJoinMode;
 
     public MainViewModel()
     {
@@ -17,6 +16,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
+    public event EventHandler? CreateSessionRequested;
 
     public string SessionCode
     {
@@ -34,19 +34,13 @@ public sealed class MainViewModel : INotifyPropertyChanged
         private set => SetProperty(ref _statusMessage, value);
     }
 
-    public bool IsJoinMode
-    {
-        get => _isJoinMode;
-        private set => SetProperty(ref _isJoinMode, value);
-    }
-
     public ICommand CreateSessionCommand { get; }
     public ICommand JoinSessionCommand { get; }
 
     private void CreateSession()
     {
-        IsJoinMode = false;
-        StatusMessage = "Session creation will be connected when the signalling service is implemented.";
+        StatusMessage = "Choose which audio sources you want to share.";
+        CreateSessionRequested?.Invoke(this, EventArgs.Empty);
     }
 
     private void JoinSession()
@@ -54,8 +48,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         if (string.IsNullOrWhiteSpace(SessionCode))
             return;
 
-        IsJoinMode = true;
-        StatusMessage = $"Ready to join session {SessionCode.Trim().ToUpperInvariant()} once the signalling service is available.";
+        StatusMessage = "Session joining will be available when the secure session service is implemented.";
     }
 
     private bool SetProperty<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)
@@ -72,10 +65,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
 public sealed class RelayCommand(Action execute, Func<bool>? canExecute = null) : ICommand
 {
     public event EventHandler? CanExecuteChanged;
-
     public bool CanExecute(object? parameter) => canExecute?.Invoke() ?? true;
-
     public void Execute(object? parameter) => execute();
-
     public void RaiseCanExecuteChanged() => CanExecuteChanged?.Invoke(this, EventArgs.Empty);
 }
