@@ -38,6 +38,7 @@ public partial class AudioSourceWindow : Window
 
     private async void OnClosed(object? sender, EventArgs e)
     {
-        await _viewModel.DisposeAsync();
+        try { await _viewModel.DisposeAsync(); }
+        catch { /* The window is already closing; teardown has been attempted. */ }
     }
 }

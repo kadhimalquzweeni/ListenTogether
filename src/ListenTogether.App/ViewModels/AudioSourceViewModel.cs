@@ -181,12 +181,13 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
 
     public async Task StartAsync()
     {
-        ObjectDisposedException.ThrowIf(Volatile.Read(ref _isDisposed) == 1, this);
-        await _sessionLifecycle.WaitAsync();
+        if (Volatile.Read(ref _isDisposed) == 1)
+            return;
+        try { await _sessionLifecycle.WaitAsync(); }
+        catch (ObjectDisposedException) { return; }
         try
         {
-            ObjectDisposedException.ThrowIf(Volatile.Read(ref _isDisposed) == 1, this);
-            if (IsCapturing || IsLoading)
+            if (Volatile.Read(ref _isDisposed) == 1 || IsCapturing || IsLoading)
                 return;
 
             var selectedItems = GetSelection(out var selection);
@@ -269,10 +270,11 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
         if (Volatile.Read(ref _isDisposed) == 1)
             return;
 
-        await _sessionLifecycle.WaitAsync();
+        try { await _sessionLifecycle.WaitAsync(); }
+        catch (ObjectDisposedException) { return; }
         try
         {
-            if (_captureSession is null && _sessionClient is null)
+            if (Volatile.Read(ref _isDisposed) == 1 || (_captureSession is null && _sessionClient is null))
                 return;
 
             IsLoading = true;
@@ -311,7 +313,8 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
         await _sessionLifecycle.WaitAsync();
         try
         {
-            await CleanupSessionAsync();
+            try { await CleanupSessionAsync(); }
+            catch { /* The window is closing; all teardown stages are attempted before this point. */ }
             IsCapturing = false;
         }
         finally
