@@ -43,6 +43,25 @@ public sealed class PeerKeyAgreementTests
     }
 
     [Fact]
+    public void Complete_ThreeParticipantsHaveIndependentPairwiseKeys()
+    {
+        using var hostListenerA = PeerKeyAgreement.Create(SessionId, "host", "listener-a");
+        using var listenerAHost = PeerKeyAgreement.Create(SessionId, "listener-a", "host");
+        using var hostListenerB = PeerKeyAgreement.Create(SessionId, "host", "listener-b");
+        using var listenerBHost = PeerKeyAgreement.Create(SessionId, "listener-b", "host");
+
+        using var hostAResult = hostListenerA.Complete(listenerAHost.LocalOffer);
+        using var listenerAResult = listenerAHost.Complete(hostListenerA.LocalOffer);
+        using var hostBResult = hostListenerB.Complete(listenerBHost.LocalOffer);
+        using var listenerBResult = listenerBHost.Complete(hostListenerB.LocalOffer);
+
+        Assert.True(hostAResult.VerifyPeerProof(listenerAResult.LocalProof));
+        Assert.True(hostBResult.VerifyPeerProof(listenerBResult.LocalProof));
+        Assert.False(hostAResult.SendKey.SequenceEqual(hostBResult.SendKey));
+        Assert.False(hostAResult.TranscriptHash.SequenceEqual(hostBResult.TranscriptHash));
+    }
+
+    [Fact]
     public void Complete_RejectsOfferForDifferentSession()
     {
         using var host = PeerKeyAgreement.Create(SessionId, "host", "listener");
