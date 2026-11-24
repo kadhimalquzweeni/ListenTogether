@@ -45,11 +45,11 @@ export class SessionRoomLogic {
       return new Response("WebSocket upgrade required.", { status: 426 });
     const pair = new WebSocketPair();
     const [client, server] = Object.values(pair);
+    this.ctx.acceptWebSocket(server);
     server.serializeAttachment({
       id: crypto.randomUUID(), handshaken: false, code: null, role: null,
       displayName: null, lastSequence: -1, lastBatchAt: 0
     });
-    this.ctx.acceptWebSocket(server);
     return new Response(null, { status: 101, webSocket: client });
   }
 
