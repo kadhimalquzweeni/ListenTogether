@@ -161,8 +161,10 @@ public sealed class PeerKeyNegotiationCoordinatorTests
         using var host = new PeerKeyNegotiationCoordinator(hostSignalling);
         using var listener = new PeerKeyNegotiationCoordinator(listenerSignalling);
 
-        listenerSignalling.HoldNextOffer = true;
+        listenerSignalling.HoldNextProof = true;
+        await listener.BeginPeerAsync("host");
         await host.BeginPeerAsync("listener");
+        await WaitUntilAsync(() => host.GetSecuredResult("listener") is not null);
 
         hostSignalling.RaiseProof(new PeerKeyProofMessage(
             SessionId, "listener", "host", new byte[32], new byte[32]));
@@ -220,10 +222,12 @@ public sealed class PeerKeyNegotiationCoordinatorTests
         string connectionId) : IPeerKeySignalling
     {
         private PeerKeyOffer? _heldOffer;
+        private (string To, byte[] Hash, byte[] Proof)? _heldProof;
 
         public Guid SessionId => sessionId;
         public string? ConnectionId => connectionId;
         public bool HoldNextOffer { get; set; }
+        public bool HoldNextProof { get; set; }
 
         public event Action<PeerKeyOfferMessage>? PeerKeyOfferReceived;
         public event Action<PeerKeyProofMessage>? PeerKeyProofReceived;
@@ -263,7 +267,21 @@ public sealed class PeerKeyNegotiationCoordinatorTests
             CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            if (HoldNextProof)
+            {
+                HoldNextProof = false;
+                _heldProof = (toConnectionId, transcriptHash.ToArray(), proof.ToArray());
+                return Task.CompletedTask;
+            }
             return network.SendProofAsync(connectionId, toConnectionId, transcriptHash, proof);
+        }
+
+        public void DeliverHeldProof()
+        {
+            if (_heldProof is not { } held)
+                throw new InvalidOperationException("No proof is being held.");
+            _heldProof = null;
+            _ = network.SendProofAsync(connectionId, held.To, held.Hash, held.Proof);
         }
 
         public void RaiseOffer(PeerKeyOfferMessage message) => PeerKeyOfferReceived?.Invoke(message);
