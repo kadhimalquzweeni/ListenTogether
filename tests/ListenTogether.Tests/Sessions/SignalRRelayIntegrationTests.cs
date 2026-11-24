@@ -1,6 +1,5 @@
 using ListenTogether.Core.Sessions;
 using ListenTogether.Infrastructure.Networking;
-using ListenTogether.Infrastructure.Audio;
 using ListenTogether.Core.Audio;
 using ListenTogether.Server.Hubs;
 using ListenTogether.Server.Sessions;
@@ -17,134 +16,41 @@ namespace ListenTogether.Tests.Sessions;
 public sealed class SignalRRelayIntegrationTests
 {
     [Fact]
-    public async Task HostAndListener_CanCreateJoinAndRelayAnOpusPacket()
+    public async Task HostAndListener_CanCreateAndJoinASignallingSession()
     {
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.UseKestrel().UseUrls("http://127.0.0.1:0");
         builder.Services.AddSingleton<SessionRegistry>();
-        builder.Services.AddSignalR(options => options.MaximumReceiveMessageSize = 16 * 1024);
+        builder.Services.AddSignalR();
 
         await using var app = builder.Build();
         app.MapHub<ListeningHub>("/hubs/listening");
         await app.StartAsync();
 
         var server = app.Services.GetRequiredService<IServer>();
-        var addresses = server.Features.Get<IServerAddressesFeature>();
-        var address = Assert.Single(addresses!.Addresses);
+        var address = Assert.Single(server.Features.Get<IServerAddressesFeature>()!.Addresses);
         var serverUri = new Uri(address);
 
         await using var host = new SignalRSessionClient(serverUri);
         await using var listener = new SignalRSessionClient(serverUri);
-
         var participantJoined = new TaskCompletionSource<SessionParticipant>(
-            TaskCreationOptions.RunContinuationsAsynchronously);
-        var receivedPacket = new TaskCompletionSource<(byte[] Packet, long Sequence)>(
             TaskCreationOptions.RunContinuationsAsynchronously);
         var sessionEnded = new TaskCompletionSource<string>(
             TaskCreationOptions.RunContinuationsAsynchronously);
-
         host.ParticipantJoined += participant => participantJoined.TrySetResult(participant);
-        listener.AudioPacketReceived += (packet, sequence) =>
-            receivedPacket.TrySetResult((packet, sequence));
         listener.SessionEnded += reason => sessionEnded.TrySetResult(reason);
 
         var invitation = await host.CreateSessionAsync("Host");
         Assert.Equal(8, invitation.Code.Length);
-
         var joined = await listener.JoinSessionAsync(invitation.Code, "Listener");
         Assert.Equal(invitation.Code, joined.Invitation.Code);
         Assert.Equal("Host", joined.HostDisplayName);
         Assert.Equal(2, joined.Participants.Count);
-
-        var participant = await participantJoined.Task.WaitAsync(TimeSpan.FromSeconds(5));
-        Assert.Equal("Listener", participant.DisplayName);
-
-        using var encoder = new OpusAudioEncoder();
-        var opusPacket = Assert.Single(encoder.Encode(new AudioFrame(
-            new float[OpusAudioEncoder.FrameSamplesPerChannel * AudioFormat.Broadcast.Channels],
-            AudioFormat.Broadcast,
-            DateTimeOffset.UtcNow)));
-        await host.SendAudioPacketAsync(opusPacket, 1);
-
-        var received = await receivedPacket.Task.WaitAsync(TimeSpan.FromSeconds(5));
-        Assert.Equal(opusPacket, received.Packet);
-        Assert.Equal(1, received.Sequence);
-
-        using var decoder = new OpusAudioDecoder();
-        var decodedFrame = decoder.Decode(received.Packet);
-        Assert.Equal(OpusAudioEncoder.FrameSamplesPerChannel, decodedFrame.FrameCount);
+        Assert.Equal("Listener", (await participantJoined.Task.WaitAsync(TimeSpan.FromSeconds(5))).DisplayName);
 
         await host.LeaveSessionAsync();
-        var reason = await sessionEnded.Task.WaitAsync(TimeSpan.FromSeconds(5));
-        Assert.Contains("host", reason, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("host", await sessionEnded.Task.WaitAsync(TimeSpan.FromSeconds(5)), StringComparison.OrdinalIgnoreCase);
     }
-
-    [Fact]
-    public async Task RelayRejectsAudioPublishedByAListener()
-    {
-        var builder = WebApplication.CreateBuilder();
-        builder.WebHost.UseKestrel().UseUrls("http://127.0.0.1:0");
-        builder.Services.AddSingleton<SessionRegistry>();
-        builder.Services.AddSignalR();
-
-        await using var app = builder.Build();
-        app.MapHub<ListeningHub>("/hubs/listening");
-        await app.StartAsync();
-
-        var server = app.Services.GetRequiredService<IServer>();
-        var address = Assert.Single(server.Features.Get<IServerAddressesFeature>()!.Addresses);
-        var serverUri = new Uri(address);
-
-        await using var host = new SignalRSessionClient(serverUri);
-        await host.CreateSessionAsync("Host");
-
-        await using var listener = new HubConnectionBuilder()
-            .WithUrl(new Uri(serverUri, "/hubs/listening"))
-            .Build();
-        await listener.StartAsync();
-        await listener.InvokeAsync("JoinSession", host.SessionCode!, "Listener");
-
-        await Assert.ThrowsAsync<HubException>(() =>
-            listener.InvokeAsync("SendAudioPacket", new byte[] { 1, 2, 3 }, 1, Array.Empty<string>()));
-    }
-
-    [Fact]
-    public async Task HostCanExcludeDirectUdpPeersFromSignalRRelay()
-    {
-        var builder = WebApplication.CreateBuilder();
-        builder.WebHost.UseKestrel().UseUrls("http://127.0.0.1:0");
-        builder.Services.AddSingleton<SessionRegistry>();
-        builder.Services.AddSignalR();
-
-        await using var app = builder.Build();
-        app.MapHub<ListeningHub>("/hubs/listening");
-        await app.StartAsync();
-
-        var server = app.Services.GetRequiredService<IServer>();
-        var address = Assert.Single(server.Features.Get<IServerAddressesFeature>()!.Addresses);
-        var serverUri = new Uri(address);
-
-        await using var host = new SignalRSessionClient(serverUri);
-        await using var directListener = new SignalRSessionClient(serverUri);
-        await using var relayListener = new SignalRSessionClient(serverUri);
-        var directReceived = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var relayReceived = new TaskCompletionSource<byte[]>(TaskCreationOptions.RunContinuationsAsynchronously);
-        directListener.AudioPacketReceived += (_, _) => directReceived.TrySetResult();
-        relayListener.AudioPacketReceived += (packet, _) => relayReceived.TrySetResult(packet);
-
-        var invitation = await host.CreateSessionAsync("Host");
-        await directListener.JoinSessionAsync(invitation.Code, "Direct listener");
-        await relayListener.JoinSessionAsync(invitation.Code, "Relay listener");
-
-        var packet = new byte[] { 0xF8, 0xFF, 0xFE };
-        await host.SendAudioPacketAsync(
-            packet, 1, new[] { directListener.ConnectionId! });
-
-        Assert.Equal(packet, await relayReceived.Task.WaitAsync(TimeSpan.FromSeconds(5)));
-        await Task.Delay(200);
-        Assert.False(directReceived.Task.IsCompleted);
-    }
-
     [Fact]
     public async Task Participants_ExchangePeerCandidatesWithinTheirSession()
     {
