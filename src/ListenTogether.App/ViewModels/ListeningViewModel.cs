@@ -1,0 +1,205 @@
+using System.ComponentModel;
+using System.Runtime.CompilerServices;
+using System.Windows;
+using System.Windows.Input;
+using ListenTogether.Core.Sessions;
+using ListenTogether.Infrastructure.Audio;
+using ListenTogether.Infrastructure.Networking;
+
+namespace ListenTogether.App.ViewModels;
+
+public sealed class ListeningViewModel : INotifyPropertyChanged, IAsyncDisposable
+{
+    private readonly SignalRSessionClient _client;
+    private readonly OpusAudioDecoder _decoder = new();
+    private readonly WasapiAudioPlayback _playback = new();
+    private readonly object _decodeLock = new();
+    private readonly string _sessionCode;
+    private bool _isConnecting;
+    private bool _isConnected;
+    private string _statusMessage = "Connecting to the listening session…";
+    private string _hostDisplayName = "—";
+    private int _participantCount;
+
+    public ListeningViewModel(Uri serverUri, string displayName, string sessionCode)
+    {
+        _sessionCode = sessionCode;
+        _client = new SignalRSessionClient(serverUri);
+        _client.AudioPacketReceived += OnAudioPacketReceived;
+        _client.ParticipantJoined += OnParticipantJoined;
+        _client.ParticipantLeft += OnParticipantLeft;
+        _client.SessionEnded += OnSessionEnded;
+        _client.ConnectionClosed += OnConnectionClosed;
+
+        LeaveCommand = new AsyncRelayCommand(LeaveAsync, () => IsConnected || IsConnecting);
+        _displayName = displayName;
+    }
+
+    private readonly string _displayName;
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+
+    public string StatusMessage
+    {
+        get => _statusMessage;
+        private set => SetProperty(ref _statusMessage, value);
+    }
+
+    public string HostDisplayName
+    {
+        get => _hostDisplayName;
+        private set => SetProperty(ref _hostDisplayName, value);
+    }
+
+    public int ParticipantCount
+    {
+        get => _participantCount;
+        private set => SetProperty(ref _participantCount, value);
+    }
+
+    public bool IsConnecting
+    {
+        get => _isConnecting;
+        private set
+        {
+            if (SetProperty(ref _isConnecting, value))
+                (LeaveCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
+        }
+    }
+
+    public bool IsConnected
+    {
+        get => _isConnected;
+        private set
+        {
+            if (SetProperty(ref _isConnected, value))
+                (LeaveCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
+        }
+    }
+
+    public ICommand LeaveCommand { get; }
+
+    public async Task ConnectAsync()
+    {
+        if (IsConnecting || IsConnected)
+            return;
+
+        IsConnecting = true;
+        StatusMessage = "Joining session…";
+        try
+        {
+            var result = await _client.JoinSessionAsync(_sessionCode, _displayName);
+            HostDisplayName = result.HostDisplayName;
+            ParticipantCount = result.Participants.Count;
+            _playback.Start();
+            IsConnected = true;
+            StatusMessage = $"You're listening with {HostDisplayName}.";
+        }
+        catch (Exception exception)
+        {
+            StatusMessage = $"Couldn't join the session: {exception.Message}";
+        }
+        finally
+        {
+            IsConnecting = false;
+        }
+    }
+
+    public async Task LeaveAsync()
+    {
+        if (!IsConnected && !_client.IsConnected)
+            return;
+
+        StatusMessage = "Leaving session…";
+        IsConnected = false;
+
+        try { await _client.LeaveSessionAsync(); }
+        catch (Exception exception) { StatusMessage = $"Couldn't leave cleanly: {exception.Message}"; }
+
+        _playback.Clear();
+        StatusMessage = "You've left the listening session.";
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _client.AudioPacketReceived -= OnAudioPacketReceived;
+        _client.ParticipantJoined -= OnParticipantJoined;
+        _client.ParticipantLeft -= OnParticipantLeft;
+        _client.SessionEnded -= OnSessionEnded;
+        _client.ConnectionClosed -= OnConnectionClosed;
+
+        try { await LeaveAsync(); }
+        finally
+        {
+            _decoder.Dispose();
+            await _playback.DisposeAsync();
+            await _client.DisposeAsync();
+        }
+    }
+
+    private void OnAudioPacketReceived(byte[] packet, long sequence)
+    {
+        try
+        {
+            lock (_decodeLock)
+            {
+                var frame = _decoder.Decode(packet);
+                _playback.Write(frame);
+            }
+        }
+        catch (Exception exception)
+        {
+            NotifyOnUi(() => StatusMessage = $"Audio playback warning: {exception.Message}");
+        }
+    }
+
+    private void OnParticipantJoined(SessionParticipant participant)
+        => NotifyOnUi(() =>
+        {
+            ParticipantCount++;
+            StatusMessage = $"{participant.DisplayName} joined the session.";
+        });
+
+    private void OnParticipantLeft(SessionParticipant participant)
+        => NotifyOnUi(() =>
+        {
+            ParticipantCount = Math.Max(1, ParticipantCount - 1);
+            StatusMessage = $"{participant.DisplayName} left the session.";
+        });
+
+    private void OnSessionEnded(string reason)
+        => NotifyOnUi(() =>
+        {
+            IsConnected = false;
+            _playback.Clear();
+            StatusMessage = reason;
+        });
+
+    private void OnConnectionClosed(Exception? exception)
+        => NotifyOnUi(() =>
+        {
+            IsConnected = false;
+            StatusMessage = exception is null
+                ? "Connection to the relay was closed."
+                : $"Connection to the relay was lost: {exception.Message}";
+        });
+
+    private void NotifyOnUi(Action action)
+    {
+        var dispatcher = Application.Current?.Dispatcher;
+        if (dispatcher is null || dispatcher.CheckAccess())
+            action();
+        else
+            dispatcher.BeginInvoke(action);
+    }
+
+    private bool SetProperty<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)
+    {
+        if (EqualityComparer<T>.Default.Equals(field, value))
+            return false;
+
+        field = value;
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+        return true;
+    }
+}

@@ -1,10 +1,13 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
+using System.Threading.Channels;
 using System.Windows;
 using System.Windows.Input;
 using ListenTogether.Core.Audio;
+using ListenTogether.Core.Sessions;
 using ListenTogether.Infrastructure.Audio;
+using ListenTogether.Infrastructure.Networking;
 
 namespace ListenTogether.App.ViewModels;
 
@@ -12,18 +15,37 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
 {
     private readonly IAudioSourceDiscovery _discovery;
     private readonly IAudioCaptureFactory _captureFactory;
+    private readonly Uri _serverUri;
+    private readonly string _displayName;
+    private readonly SignalRSessionClientFactory _sessionClientFactory;
+    private readonly List<AudioSourceItemViewModel> _activeGainSources = [];
     private AudioCaptureMixerSession? _captureSession;
+    private SignalRSessionClient? _sessionClient;
+    private OpusAudioEncoder? _encoder;
+    private Channel<EncodedAudioPacket>? _packetChannel;
+    private CancellationTokenSource? _streamCancellation;
+    private Task? _streamTask;
     private AudioSourceItemViewModel? _systemAudioSource;
     private bool _isSystemAudioMode = true;
     private bool _isLoading;
     private bool _isCapturing;
     private string _statusMessage = "Choose system audio or select one or more applications.";
+    private string _sessionCode = string.Empty;
     private double _outputLevel;
+    private long _packetSequence;
 
-    public AudioSourceViewModel(IAudioSourceDiscovery discovery, IAudioCaptureFactory captureFactory)
+    public AudioSourceViewModel(
+        IAudioSourceDiscovery discovery,
+        IAudioCaptureFactory captureFactory,
+        Uri serverUri,
+        string displayName,
+        SignalRSessionClientFactory? sessionClientFactory = null)
     {
         _discovery = discovery ?? throw new ArgumentNullException(nameof(discovery));
         _captureFactory = captureFactory ?? throw new ArgumentNullException(nameof(captureFactory));
+        _serverUri = serverUri ?? throw new ArgumentNullException(nameof(serverUri));
+        _displayName = string.IsNullOrWhiteSpace(displayName) ? throw new ArgumentException("A display name is required.", nameof(displayName)) : displayName.Trim();
+        _sessionClientFactory = sessionClientFactory ?? new SignalRSessionClientFactory();
 
         RefreshCommand = new AsyncRelayCommand(RefreshAsync, () => !IsLoading && !IsCapturing);
         StartCommand = new AsyncRelayCommand(StartAsync, () => !IsLoading && !IsCapturing);
@@ -58,7 +80,10 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
         private set
         {
             if (SetProperty(ref _isLoading, value))
+            {
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CanStart)));
                 RefreshCommands();
+            }
         }
     }
 
@@ -68,7 +93,10 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
         private set
         {
             if (SetProperty(ref _isCapturing, value))
+            {
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CanStart)));
                 RefreshCommands();
+            }
         }
     }
 
@@ -76,6 +104,12 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
     {
         get => _statusMessage;
         private set => SetProperty(ref _statusMessage, value);
+    }
+
+    public string SessionCode
+    {
+        get => _sessionCode;
+        private set => SetProperty(ref _sessionCode, value);
     }
 
     public double OutputLevel
@@ -133,69 +167,53 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
         if (IsCapturing || IsLoading)
             return;
 
-        AudioSourceSelection selection;
-        IReadOnlyList<AudioSourceItemViewModel> selectedItems;
-
-        if (IsSystemAudioMode)
-        {
-            if (SystemAudioSource is null)
-            {
-                StatusMessage = "The system audio source wasn't found. Refresh the list and try again.";
-                return;
-            }
-
-            selectedItems = [SystemAudioSource];
-            selection = AudioSourceSelection.System(SystemAudioSource.Source);
-        }
-        else
-        {
-            selectedItems = ApplicationSources.Where(source => source.IsSelected).ToArray();
-            if (selectedItems.Count == 0)
-            {
-                StatusMessage = "Select at least one application to share.";
-                return;
-            }
-
-            selection = AudioSourceSelection.Applications(selectedItems.Select(item => item.Source));
-        }
+        var selectedItems = GetSelection(out var selection);
+        if (selection is null)
+            return;
 
         IsLoading = true;
-        StatusMessage = "Starting audio capture…";
+        StatusMessage = "Connecting to the listening relay…";
 
         try
         {
+            _sessionClient = _sessionClientFactory.Create(_serverUri);
+            _sessionClient.ConnectionClosed += OnConnectionClosed;
+            _sessionClient.ParticipantJoined += OnParticipantJoined;
+            var invitation = await _sessionClient.CreateSessionAsync(_displayName);
+            SessionCode = invitation.Code;
+
+            _encoder = new OpusAudioEncoder();
+            _packetChannel = Channel.CreateBounded<EncodedAudioPacket>(new BoundedChannelOptions(100)
+            {
+                FullMode = BoundedChannelFullMode.DropOldest,
+                SingleReader = true,
+                SingleWriter = true
+            });
+            _streamCancellation = new CancellationTokenSource();
+            _streamTask = StreamPacketsAsync(_packetChannel.Reader, _streamCancellation.Token);
+
             _captureSession = new AudioCaptureMixerSession(selection, _captureFactory);
+            _captureSession.MixedFrameAvailable += OnMixedFrameAvailable;
+            _captureSession.CaptureFaulted += OnCaptureFaulted;
+
             foreach (var item in selectedItems)
             {
                 item.GainChanged += OnSelectedSourceGainChanged;
+                _activeGainSources.Add(item);
             }
 
-            _captureSession.MixedFrameAvailable += OnMixedFrameAvailable;
-            _captureSession.CaptureFaulted += OnCaptureFaulted;
             await _captureSession.StartAsync();
 
             foreach (var item in selectedItems)
                 _captureSession.SetGain(item.Source.Id, item.EffectiveGain);
 
             IsCapturing = true;
-            StatusMessage = IsSystemAudioMode
-                ? "Capturing all system audio."
-                : $"Capturing {selectedItems.Count} selected application(s).";
+            StatusMessage = $"Sharing audio. Invite code: {SessionCode}";
         }
         catch (Exception exception)
         {
-            if (_captureSession is not null)
-            {
-                _captureSession.MixedFrameAvailable -= OnMixedFrameAvailable;
-                _captureSession.CaptureFaulted -= OnCaptureFaulted;
-                await _captureSession.DisposeAsync();
-                _captureSession = null;
-            }
-
-            foreach (var item in selectedItems)
-                item.GainChanged -= OnSelectedSourceGainChanged;
-
-            StatusMessage = $"Couldn't start audio capture: {exception.Message}";
+            await CleanupSessionAsync();
+            StatusMessage = $"Couldn't start the session: {exception.Message}";
         }
         finally
         {
@@ -205,29 +223,23 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
 
     public async Task StopAsync()
     {
-        if (_captureSession is null)
+        if (_captureSession is null && _sessionClient is null)
             return;
 
         IsLoading = true;
-        StatusMessage = "Stopping audio capture…";
+        StatusMessage = "Stopping the listening session…";
 
         try
         {
-            _captureSession.MixedFrameAvailable -= OnMixedFrameAvailable;
-            _captureSession.CaptureFaulted -= OnCaptureFaulted;
-            await _captureSession.DisposeAsync();
-            _captureSession = null;
-
-            foreach (var item in GetCurrentSelectedItems())
-                item.GainChanged -= OnSelectedSourceGainChanged;
-
+            await CleanupSessionAsync();
             IsCapturing = false;
             OutputLevel = 0;
-            StatusMessage = "Audio capture stopped.";
+            SessionCode = string.Empty;
+            StatusMessage = "Session ended. Your audio is no longer being shared.";
         }
         catch (Exception exception)
         {
-            StatusMessage = $"Couldn't stop audio capture cleanly: {exception.Message}";
+            StatusMessage = $"Couldn't stop the session cleanly: {exception.Message}";
         }
         finally
         {
@@ -237,16 +249,87 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
 
     public async ValueTask DisposeAsync()
     {
-        if (_captureSession is not null)
+        if (_captureSession is not null || _sessionClient is not null)
             await StopAsync();
     }
 
-    private IReadOnlyList<AudioSourceItemViewModel> GetCurrentSelectedItems()
+    private IReadOnlyList<AudioSourceItemViewModel> GetSelection(out AudioSourceSelection? selection)
     {
-        if (IsSystemAudioMode)
-            return SystemAudioSource is null ? [] : [SystemAudioSource];
+        selection = null;
 
-        return ApplicationSources.Where(source => source.IsSelected).ToArray();
+        if (IsSystemAudioMode)
+        {
+            if (SystemAudioSource is null)
+            {
+                StatusMessage = "The system audio source wasn't found. Refresh the list and try again.";
+                return [];
+            }
+
+            selection = AudioSourceSelection.System(SystemAudioSource.Source);
+            return [SystemAudioSource];
+        }
+
+        var selected = ApplicationSources.Where(source => source.IsSelected).ToArray();
+        if (selected.Length == 0)
+        {
+            StatusMessage = "Select at least one application to share.";
+            return [];
+        }
+
+        selection = AudioSourceSelection.Applications(selected.Select(item => item.Source));
+        return selected;
+    }
+
+    private async Task StreamPacketsAsync(ChannelReader<EncodedAudioPacket> reader, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await foreach (var packet in reader.ReadAllAsync(cancellationToken).ConfigureAwait(false))
+            {
+                var client = _sessionClient;
+                if (client is null)
+                    break;
+
+                await client.SendAudioPacketAsync(packet.Payload, packet.Sequence, cancellationToken).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Normal stop path.
+        }
+        catch (Exception exception)
+        {
+            NotifyOnUi(() => StatusMessage = $"Streaming connection problem: {exception.Message}");
+        }
+    }
+
+    private void OnMixedFrameAvailable(AudioFrame frame)
+    {
+        try
+        {
+            var samples = frame.Samples.Span;
+            var peak = 0f;
+            foreach (var sample in samples)
+                peak = Math.Max(peak, Math.Abs(sample));
+
+            var level = peak * 100d;
+            NotifyOnUi(() => OutputLevel = level);
+
+            var encoder = _encoder;
+            var channel = _packetChannel;
+            if (encoder is null || channel is null)
+                return;
+
+            foreach (var packet in encoder.Encode(frame))
+            {
+                var sequence = Interlocked.Increment(ref _packetSequence);
+                channel.Writer.TryWrite(new EncodedAudioPacket(packet, sequence));
+            }
+        }
+        catch (Exception exception)
+        {
+            OnCaptureFaulted(exception);
+        }
     }
 
     private void OnSelectedSourceGainChanged(object? sender, EventArgs e)
@@ -264,21 +347,70 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SelectedApplicationCount)));
     }
 
-    private void OnMixedFrameAvailable(AudioFrame frame)
-    {
-        var samples = frame.Samples.Span;
-        var peak = 0f;
-        foreach (var sample in samples)
-            peak = Math.Max(peak, Math.Abs(sample));
+    private void OnCaptureFaulted(Exception exception)
+        => NotifyOnUi(() => StatusMessage = $"Audio capture warning: {exception.Message}");
 
-        var level = peak * 100d;
-        Application.Current?.Dispatcher.BeginInvoke(() => OutputLevel = level);
+    private void OnConnectionClosed(Exception? exception)
+        => NotifyOnUi(() => StatusMessage = exception is null
+            ? "Disconnected from the relay."
+            : $"Disconnected from the relay: {exception.Message}");
+
+    private void OnParticipantJoined(SessionParticipant participant)
+        => NotifyOnUi(() => StatusMessage = $"{participant.DisplayName} joined your session.");
+
+    private void NotifyOnUi(Action action)
+    {
+        var dispatcher = Application.Current?.Dispatcher;
+        if (dispatcher is null || dispatcher.CheckAccess())
+            action();
+        else
+            dispatcher.BeginInvoke(action);
     }
 
-    private void OnCaptureFaulted(Exception exception)
+    private async Task CleanupSessionAsync()
     {
-        Application.Current?.Dispatcher.BeginInvoke(() =>
-            StatusMessage = $"Audio capture warning: {exception.Message}");
+        if (_captureSession is not null)
+        {
+            _captureSession.MixedFrameAvailable -= OnMixedFrameAvailable;
+            _captureSession.CaptureFaulted -= OnCaptureFaulted;
+            await _captureSession.DisposeAsync();
+            _captureSession = null;
+        }
+
+        foreach (var item in _activeGainSources)
+            item.GainChanged -= OnSelectedSourceGainChanged;
+        _activeGainSources.Clear();
+
+        if (_packetChannel is not null)
+        {
+            _packetChannel.Writer.TryComplete();
+            _packetChannel = null;
+        }
+
+        if (_streamCancellation is not null)
+        {
+            await _streamCancellation.CancelAsync();
+            if (_streamTask is not null)
+            {
+                try { await _streamTask.ConfigureAwait(false); }
+                catch (OperationCanceledException) { }
+            }
+
+            _streamCancellation.Dispose();
+            _streamCancellation = null;
+            _streamTask = null;
+        }
+
+        _encoder?.Dispose();
+        _encoder = null;
+
+        if (_sessionClient is not null)
+        {
+            _sessionClient.ConnectionClosed -= OnConnectionClosed;
+            _sessionClient.ParticipantJoined -= OnParticipantJoined;
+            await _sessionClient.DisposeAsync();
+            _sessionClient = null;
+        }
     }
 
     private void RefreshCommands()
@@ -297,6 +429,8 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
         return true;
     }
+
+    private sealed record EncodedAudioPacket(byte[] Payload, long Sequence);
 }
 
 public sealed class AsyncRelayCommand(Func<Task> execute, Func<bool>? canExecute = null) : ICommand
