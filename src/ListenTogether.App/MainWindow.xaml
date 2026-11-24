@@ -112,7 +112,7 @@
                                FontSize="12" TextWrapping="Wrap" VerticalAlignment="Center"
                                MaxWidth="560" />
                     <Button Content="Copy details" Click="OnCopyHostingDetailsClick"
-                            Style="{StaticResource SecondaryButton}" Margin="14,0,0,0" Padding="12,6">
+                            Margin="14,0,0,0" Padding="12,6">
                         <Button.Style>
                             <Style TargetType="Button" BasedOn="{StaticResource SecondaryButton}">
                                 <Setter Property="Visibility" Value="Collapsed" />
