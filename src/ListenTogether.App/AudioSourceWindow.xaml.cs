@@ -7,10 +7,12 @@ namespace ListenTogether.App;
 public partial class AudioSourceWindow : Window
 {
     private readonly AudioSourceViewModel _viewModel;
+    private readonly Uri _serverUri;
 
     public AudioSourceWindow(Uri serverUri, string displayName)
     {
         InitializeComponent();
+        _serverUri = serverUri ?? throw new ArgumentNullException(nameof(serverUri));
 
         _viewModel = new AudioSourceViewModel(
             new WindowsAudioSourceDiscovery(),
@@ -32,8 +34,12 @@ public partial class AudioSourceWindow : Window
 
     private void OnCopyCodeClick(object sender, RoutedEventArgs e)
     {
-        if (!string.IsNullOrWhiteSpace(_viewModel.SessionCode))
-            Clipboard.SetText(_viewModel.SessionCode);
+        if (string.IsNullOrWhiteSpace(_viewModel.SessionCode))
+            return;
+
+        var details = $"ListenTogether invite\nServer: {_serverUri.ToString().TrimEnd('/')}\nInvite code: {_viewModel.SessionCode}";
+        Clipboard.SetText(details);
+        _viewModel.SetInviteCopiedStatus();
     }
 
     private async void OnClosed(object? sender, EventArgs e)
