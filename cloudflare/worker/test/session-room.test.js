@@ -90,14 +90,13 @@ test("listener cannot publish audio and malformed batches are rejected", async (
   const created = completion(await invoke(room, host, "CreateSession", ["Host"]));
   const listener = await connect(room, ctx);
   await invoke(room, listener, "JoinSession", [created.result.code, "Listener"]);
-  const denied = completion(await invoke(room, listener, "SendAudioPacketBatch", [
+  assert.equal(listener.deserializeAttachment().role, "listener");
+  assert.throws(() => room.invoke(listener, "SendAudioPacketBatch", [
     [Buffer.from([1]).toString("base64")], [1]
-  ], "denied"));
-  assert.match(denied.error, /Only the connected session host/);
-  const malformed = completion(await invoke(room, host, "SendAudioPacketBatch", [
+  ]), /Only the connected session host/);
+  assert.throws(() => room.invoke(host, "SendAudioPacketBatch", [
     [Buffer.from([1]).toString("base64"), Buffer.from([2]).toString("base64")], [1]
-  ], "bad"));
-  assert.match(malformed.error, /matching packets and sequences/);
+  ]), /matching packets and sequences/);
 });
 
 test("host disconnect ends room and notifies listeners", async () => {
