@@ -279,7 +279,7 @@ public sealed class PeerKeyNegotiationCoordinatorTests
         public Task PublishPeerCandidateAsync(PeerCandidate candidate, CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            return network.SendCandidateAsync(connectionId, candidate);
+            return network.SendCandidateAsync(_connectionId!, candidate);
         }
 
         public Task PublishPeerKeyOfferAsync(PeerKeyOffer offer, CancellationToken cancellationToken = default)
@@ -317,7 +317,7 @@ public sealed class PeerKeyNegotiationCoordinatorTests
                 _heldProof = (toConnectionId, transcriptHash.ToArray(), proof.ToArray());
                 return Task.CompletedTask;
             }
-            return network.SendProofAsync(connectionId, toConnectionId, transcriptHash, proof);
+            return network.SendProofAsync(_connectionId!, toConnectionId, transcriptHash, proof);
         }
 
         public void DeliverHeldProof()
@@ -325,7 +325,7 @@ public sealed class PeerKeyNegotiationCoordinatorTests
             if (_heldProof is not { } held)
                 throw new InvalidOperationException("No proof is being held.");
             _heldProof = null;
-            _ = network.SendProofAsync(connectionId, held.To, held.Hash, held.Proof);
+            _ = network.SendProofAsync(_connectionId!, held.To, held.Hash, held.Proof);
         }
 
         public void SetSessionIdentity(Guid id, string connection) =>
