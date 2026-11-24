@@ -94,6 +94,10 @@ public sealed class MainViewModel : INotifyPropertyChanged
     {
         if (IsCheckingHosting)
             return;
+
+        HostingCheckResult = string.Empty;
+        CanCopyHostingResult = false;
+
         if (!Uri.TryCreate(ServerUrl?.Trim(), UriKind.Absolute, out var serverUri) ||
             serverUri.Scheme is not ("http" or "https"))
         {
