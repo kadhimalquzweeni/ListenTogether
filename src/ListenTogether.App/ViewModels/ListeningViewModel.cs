@@ -118,6 +118,7 @@ public sealed class ListeningViewModel : INotifyPropertyChanged, IAsyncDisposabl
                 }
 
                 StartJitterBuffer();
+                StatusMessage = "Gathering local and STUN UDP candidates…";
 
                 try
                 {
@@ -183,7 +184,7 @@ public sealed class ListeningViewModel : INotifyPropertyChanged, IAsyncDisposabl
 
     private async Task LeaveCoreAsync()
     {
-        if (!IsConnected && !_client.IsConnected)
+        if (!IsConnected && !_client.IsConnected && _udpTransport is null && _jitterCancellation is null && _playback is null)
             return;
 
         StatusMessage = "Leaving session…";
@@ -352,6 +353,7 @@ public sealed class ListeningViewModel : INotifyPropertyChanged, IAsyncDisposabl
             ParticipantCount = 0;
             _playback?.Clear();
             StatusMessage = reason;
+            _ = LeaveAsync();
         });
 
     private void OnConnectionClosed(Exception? exception)
@@ -363,6 +365,7 @@ public sealed class ListeningViewModel : INotifyPropertyChanged, IAsyncDisposabl
             StatusMessage = exception is null
                 ? "Connection to the signalling server was closed."
                 : $"Connection to the signalling server was lost: {exception.Message}";
+            _ = LeaveAsync();
         });
 
     private void NotifyOnUi(Action action)
