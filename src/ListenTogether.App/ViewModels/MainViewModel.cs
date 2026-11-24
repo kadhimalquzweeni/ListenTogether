@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.IO;
 using System.Runtime.CompilerServices;
 using System.Windows.Input;
+using ListenTogether.App.Networking;
 using ListenTogether.App.Settings;
 
 namespace ListenTogether.App.ViewModels;
@@ -12,17 +13,21 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private string _serverUrl = "http://localhost:5000";
     private string _displayName = Environment.UserName;
     private string _statusMessage = "Create a session to share your audio, or join a friend's session.";
+    private bool _isCheckingHosting;
     private readonly UserSettingsStore _settingsStore;
+    private readonly IHostReadinessChecker _hostReadinessChecker;
 
-    public MainViewModel(UserSettingsStore? settingsStore = null)
+    public MainViewModel(UserSettingsStore? settingsStore = null, IHostReadinessChecker? hostReadinessChecker = null)
     {
         _settingsStore = settingsStore ?? new UserSettingsStore();
+        _hostReadinessChecker = hostReadinessChecker ?? new HostReadinessChecker();
         var settings = _settingsStore.Load();
         _serverUrl = settings.ServerUrl;
         _displayName = settings.DisplayName;
 
         CreateSessionCommand = new RelayCommand(CreateSession);
         JoinSessionCommand = new RelayCommand(JoinSession, () => !string.IsNullOrWhiteSpace(SessionCode));
+        CheckHostingCommand = new AsyncRelayCommand(CheckHostingAsync, () => !IsCheckingHosting);
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -57,8 +62,47 @@ public sealed class MainViewModel : INotifyPropertyChanged
         private set => SetProperty(ref _statusMessage, value);
     }
 
+    public bool IsCheckingHosting
+    {
+        get => _isCheckingHosting;
+        private set
+        {
+            if (SetProperty(ref _isCheckingHosting, value))
+                (CheckHostingCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
+        }
+    }
+
     public ICommand CreateSessionCommand { get; }
     public ICommand JoinSessionCommand { get; }
+    public ICommand CheckHostingCommand { get; }
+
+    public async Task CheckHostingAsync()
+    {
+        if (IsCheckingHosting)
+            return;
+        if (!Uri.TryCreate(ServerUrl?.Trim(), UriKind.Absolute, out var serverUri) ||
+            serverUri.Scheme is not ("http" or "https"))
+        {
+            StatusMessage = "Enter a valid server address before checking hosting.";
+            return;
+        }
+
+        IsCheckingHosting = true;
+        StatusMessage = "Checking server health and UDP STUN connectivity…";
+        try
+        {
+            var result = await _hostReadinessChecker.CheckAsync(serverUri);
+            StatusMessage = (result.CanHost ? "READY TO HOST — " : "NOT READY TO HOST — ") + result.Message;
+        }
+        catch (Exception exception)
+        {
+            StatusMessage = "HOST CHECK FAILED — " + exception.Message;
+        }
+        finally
+        {
+            IsCheckingHosting = false;
+        }
+    }
 
     public void SaveSettings()
     {
@@ -143,5 +187,13 @@ public sealed class RelayCommand(Action execute, Func<bool>? canExecute = null) 
     public event EventHandler? CanExecuteChanged;
     public bool CanExecute(object? parameter) => canExecute?.Invoke() ?? true;
     public void Execute(object? parameter) => execute();
+    public void RaiseCanExecuteChanged() => CanExecuteChanged?.Invoke(this, EventArgs.Empty);
+}
+
+public sealed class AsyncRelayCommand(Func<Task> execute, Func<bool>? canExecute = null) : ICommand
+{
+    public event EventHandler? CanExecuteChanged;
+    public bool CanExecute(object? parameter) => canExecute?.Invoke() ?? true;
+    public async void Execute(object? parameter) => await execute();
     public void RaiseCanExecuteChanged() => CanExecuteChanged?.Invoke(this, EventArgs.Empty);
 }
