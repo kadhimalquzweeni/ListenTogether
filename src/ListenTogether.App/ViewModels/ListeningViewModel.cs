@@ -136,6 +136,8 @@ public sealed class ListeningViewModel : INotifyPropertyChanged, IAsyncDisposabl
                         await _udpTransport.DisposeAsync();
                         _udpTransport = null;
                     }
+                    await StopJitterBufferAsync();
+                    _peerNegotiation.Dispose();
                     _peerCandidates.Dispose();
                     await _client.LeaveSessionAsync();
                     if (_playback is not null)
@@ -238,6 +240,8 @@ public sealed class ListeningViewModel : INotifyPropertyChanged, IAsyncDisposabl
             if (_udpTransport is not null)
             {
                 _udpTransport.PeerConnected -= OnDirectPeerConnected;
+                _udpTransport.PeerConnectionAttemptStarted -= OnPeerConnectionAttemptStarted;
+                _udpTransport.PeerConnectionFailed -= OnPeerConnectionFailed;
                 _udpTransport.AudioPacketReceived -= OnDirectAudioPacketReceived;
                 await _udpTransport.DisposeAsync();
                 _udpTransport = null;
