@@ -274,7 +274,7 @@
                            Foreground="{StaticResource TextSecondaryBrush}" Margin="0,3,0,0" />
             </StackPanel>
             <Button Grid.Column="1" Content="Copy invite code" Click="OnCopyCodeClick"
-                    Style="{StaticResource SecondaryButton}" IsEnabled="{Binding SessionCode.Length}" />
+                    Style="{StaticResource SecondaryButton}" IsEnabled="{Binding HasSessionCode}" />
             <Button Grid.Column="3" Content="Stop sharing" Command="{Binding StopCommand}"
                     Style="{StaticResource SecondaryButton}" IsEnabled="{Binding IsCapturing}" />
             <Button Grid.Column="7" Content="Start sharing" Command="{Binding StartCommand}"

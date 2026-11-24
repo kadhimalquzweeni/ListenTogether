@@ -19,6 +19,7 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
     private readonly string _displayName;
     private readonly SignalRSessionClientFactory _sessionClientFactory;
     private readonly List<AudioSourceItemViewModel> _activeGainSources = [];
+    private readonly SemaphoreSlim _sessionLifecycle = new(1, 1);
     private AudioCaptureMixerSession? _captureSession;
     private SignalRSessionClient? _sessionClient;
     private OpusAudioEncoder? _encoder;
@@ -83,6 +84,7 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
             if (SetProperty(ref _isLoading, value))
             {
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CanStart)));
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CanEditSources)));
                 RefreshCommands();
             }
         }
@@ -96,6 +98,7 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
             if (SetProperty(ref _isCapturing, value))
             {
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CanStart)));
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CanEditSources)));
                 RefreshCommands();
             }
         }
@@ -110,7 +113,11 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
     public string SessionCode
     {
         get => _sessionCode;
-        private set => SetProperty(ref _sessionCode, value);
+        private set
+        {
+            if (SetProperty(ref _sessionCode, value))
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasSessionCode)));
+        }
     }
 
     public int ParticipantCount
@@ -129,6 +136,7 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
     public int AvailableApplicationCount => ApplicationSources.Count;
     public bool CanStart => !IsLoading && !IsCapturing;
     public bool CanEditSources => !IsLoading && !IsCapturing;
+    public bool HasSessionCode => !string.IsNullOrWhiteSpace(SessionCode);
 
     public ICommand RefreshCommand { get; }
     public ICommand StartCommand { get; }
@@ -172,14 +180,17 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
 
     public async Task StartAsync()
     {
-        if (IsCapturing || IsLoading)
-            return;
+        await _sessionLifecycle.WaitAsync();
+        try
+        {
+            if (IsCapturing || IsLoading)
+                return;
 
-        var selectedItems = GetSelection(out var selection);
-        if (selection is null)
-            return;
+            var selectedItems = GetSelection(out var selection);
+            if (selection is null)
+                return;
 
-        IsLoading = true;
+            IsLoading = true;
         StatusMessage = "Connecting to the listening relay…";
 
         try
@@ -214,6 +225,8 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
             }
 
             await _captureSession.StartAsync();
+            if (_sessionClient is not { IsConnected: true } || _sessionClient.SessionCode is null)
+                throw new InvalidOperationException("The relay connection was lost while audio capture was starting.");
 
             foreach (var item in selectedItems)
                 _captureSession.SetGain(item.Source.Id, item.EffectiveGain);
@@ -230,14 +243,22 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
         {
             IsLoading = false;
         }
+        }
+        finally
+        {
+            _sessionLifecycle.Release();
+        }
     }
 
     public async Task StopAsync()
     {
-        if (_captureSession is null && _sessionClient is null)
-            return;
+        await _sessionLifecycle.WaitAsync();
+        try
+        {
+            if (_captureSession is null && _sessionClient is null)
+                return;
 
-        IsLoading = true;
+            IsLoading = true;
         StatusMessage = "Stopping the listening session…";
 
         try
@@ -257,12 +278,18 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
         {
             IsLoading = false;
         }
+        }
+        finally
+        {
+            _sessionLifecycle.Release();
+        }
     }
 
     public async ValueTask DisposeAsync()
     {
         if (_captureSession is not null || _sessionClient is not null)
             await StopAsync();
+        _sessionLifecycle.Dispose();
     }
 
     private IReadOnlyList<AudioSourceItemViewModel> GetSelection(out AudioSourceSelection? selection)
@@ -363,9 +390,13 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
         => NotifyOnUi(() => StatusMessage = $"Audio capture warning: {exception.Message}");
 
     private void OnConnectionClosed(Exception? exception)
-        => NotifyOnUi(() => StatusMessage = exception is null
-            ? "Disconnected from the relay."
-            : $"Disconnected from the relay: {exception.Message}");
+        => NotifyOnUi(() =>
+        {
+            StatusMessage = exception is null
+                ? "Disconnected from the relay."
+                : $"Disconnected from the relay: {exception.Message}";
+            _ = StopAsync();
+        });
 
     private void OnParticipantJoined(SessionParticipant participant)
         => NotifyOnUi(() =>
@@ -384,9 +415,8 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
     private void OnSessionEnded(string reason)
         => NotifyOnUi(() =>
         {
-            IsCapturing = false;
-            ParticipantCount = 0;
             StatusMessage = reason;
+            _ = StopAsync();
         });
 
     private void NotifyOnUi(Action action)
