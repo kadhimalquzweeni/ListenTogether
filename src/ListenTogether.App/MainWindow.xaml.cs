@@ -47,7 +47,6 @@ public partial class MainWindow : Window
         try
         {
             Clipboard.SetText(viewModel.HostingCheckResult);
-            viewModel.StatusMessage = "Hosting check details copied to the clipboard.";
         }
         catch (Exception exception) when (exception is System.Runtime.InteropServices.ExternalException or InvalidOperationException)
         {
