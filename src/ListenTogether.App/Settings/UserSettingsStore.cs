@@ -4,7 +4,7 @@ using System.Text.Json;
 namespace ListenTogether.App.Settings;
 
 /// <summary>
-/// Persists non-sensitive desktop preferences such as the relay URL and display name.
+/// Persists non-sensitive desktop preferences such as the server address and display name.
 /// </summary>
 public sealed class UserSettingsStore
 {
@@ -64,7 +64,7 @@ public sealed class UserSettingsStore
         if (!Uri.TryCreate(settings.ServerUrl, UriKind.Absolute, out var uri) ||
             uri.Scheme is not ("http" or "https"))
         {
-            throw new ArgumentException("The relay URL must be an absolute HTTP or HTTPS URL.", nameof(settings));
+            throw new ArgumentException("The server address must be an absolute HTTP or HTTPS URL.", nameof(settings));
         }
 
         if (string.IsNullOrWhiteSpace(settings.DisplayName) || settings.DisplayName.Trim().Length > 32)
