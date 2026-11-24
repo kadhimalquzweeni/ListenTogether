@@ -14,7 +14,7 @@ services:
     image: caddy:2
     environment:
       LISTENTOGETHER_DOMAIN: ${LISTENTOGETHER_DOMAIN:?Set LISTENTOGETHER_DOMAIN in .env}
-      ACME_EMAIL: ${ACME_EMAIL:-}
+      ACME_EMAIL: ${ACME_EMAIL:?Set ACME_EMAIL in .env}
     ports:
       - "80:80"
       - "443:443"

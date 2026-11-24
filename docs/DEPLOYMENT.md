@@ -32,7 +32,7 @@ You need:
 - A DNS name pointing to the server.
 - Inbound TCP ports 80 and 443 available to Caddy.
 
-Copy `.env.example` to `.env` and set `LISTENTOGETHER_DOMAIN` to your public DNS name. Then run:
+Copy `.env.example` to `.env` and set `LISTENTOGETHER_DOMAIN` to your public DNS name and `ACME_EMAIL` to an address for certificate notifications. Then run:
 
 ```bash
 docker compose -f docker-compose.production.yml up --build -d
