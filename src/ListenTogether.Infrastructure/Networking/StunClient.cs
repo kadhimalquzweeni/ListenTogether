@@ -36,13 +36,17 @@ public sealed class StunClient
         using var timeoutSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeoutSource.CancelAfter(timeout);
 
-        await socket.SendAsync(request, stunServer, timeoutSource.Token).ConfigureAwait(false);
-
         try
         {
+            await socket.SendAsync(request, stunServer, timeoutSource.Token).ConfigureAwait(false);
+
             while (true)
             {
                 var received = await socket.ReceiveAsync(timeoutSource.Token).ConfigureAwait(false);
+                // Do not accept a spoofed response from an arbitrary UDP source.
+                if (!received.RemoteEndPoint.Equals(stunServer))
+                    continue;
+
                 if (TryParseBindingResponse(received.Buffer, transactionId, out var mapped))
                     return mapped;
             }
