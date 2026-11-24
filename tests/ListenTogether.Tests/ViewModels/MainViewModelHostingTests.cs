@@ -17,6 +17,8 @@ public sealed class MainViewModelHostingTests : IDisposable
         Assert.Contains("READY TO HOST", viewModel.StatusMessage);
         Assert.Contains("Both checks passed", viewModel.StatusMessage);
         Assert.False(viewModel.IsCheckingHosting);
+        Assert.False(viewModel.CanCopyHostingResult);
+        Assert.Empty(viewModel.HostingCheckResult);
         Assert.True(viewModel.CheckHostingCommand.CanExecute(null));
     }
 
@@ -27,6 +29,19 @@ public sealed class MainViewModelHostingTests : IDisposable
         await viewModel.CheckHostingAsync();
         Assert.Contains("NOT READY TO HOST", viewModel.StatusMessage);
         Assert.Contains("STUN is unreachable", viewModel.StatusMessage);
+        Assert.True(viewModel.CanCopyHostingResult);
+        Assert.Equal(viewModel.StatusMessage, viewModel.HostingCheckResult);
+    }
+
+    [Fact]
+    public async Task CheckHostingAsync_WhenCheckerThrows_ExposesExceptionDetailsForCopying()
+    {
+        var viewModel = CreateViewModel(new ThrowingChecker());
+        await viewModel.CheckHostingAsync();
+
+        Assert.Contains("HOST CHECK FAILED", viewModel.StatusMessage);
+        Assert.True(viewModel.CanCopyHostingResult);
+        Assert.Equal(viewModel.StatusMessage, viewModel.HostingCheckResult);
     }
 
     [Fact]
@@ -47,6 +62,12 @@ public sealed class MainViewModelHostingTests : IDisposable
     {
         if (Directory.Exists(_directory))
             Directory.Delete(_directory, true);
+    }
+
+    private sealed class ThrowingChecker : IHostReadinessChecker
+    {
+        public Task<HostReadinessResult> CheckAsync(Uri serverUri, CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException("Simulated network failure.");
     }
 
     private sealed class StubChecker(HostReadinessResult result) : IHostReadinessChecker
