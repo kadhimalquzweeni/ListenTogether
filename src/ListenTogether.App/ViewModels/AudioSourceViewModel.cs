@@ -394,7 +394,7 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
                 if (transport is not null)
                 {
                     directRecipients = await transport.SendAudioToConnectedPeersAsync(
-                        packet.Payload, cancellationToken).ConfigureAwait(false);
+                        packet.Payload, packet.Sequence, cancellationToken).ConfigureAwait(false);
                 }
 
                 await client.SendAudioPacketAsync(
