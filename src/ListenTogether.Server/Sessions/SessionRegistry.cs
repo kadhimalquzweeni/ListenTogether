@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Security.Cryptography;
 using ListenTogether.Core.Sessions;
 
@@ -11,7 +10,6 @@ public sealed class SessionRegistry
 {
     private const int MaximumParticipants = 16;
     private const int MaximumDisplayNameLength = 32;
-    private const int MaximumOpusPacketBytes = 1_275;
     private static readonly char[] CodeAlphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789".ToCharArray();
 
     private readonly object _sync = new();
@@ -108,34 +106,6 @@ public sealed class SessionRegistry
             return _connectionSessions.TryGetValue(connectionId, out code!);
     }
 
-    public bool TryAcceptAudioPacket(string connectionId, long sequence, int packetLength)
-    {
-        if (packetLength is < 1 or > MaximumOpusPacketBytes || sequence < 0)
-            return false;
-
-        lock (_sync)
-        {
-            if (!_connectionSessions.TryGetValue(connectionId, out var code) ||
-                !_sessions.TryGetValue(code, out var session) ||
-                session.HostConnectionId != connectionId ||
-                sequence <= session.LastSequence)
-            {
-                return false;
-            }
-
-            var now = Stopwatch.GetTimestamp();
-            if (session.LastPacketTimestamp != 0 &&
-                Stopwatch.GetElapsedTime(session.LastPacketTimestamp, now) < TimeSpan.FromMilliseconds(10))
-            {
-                return false;
-            }
-
-            session.LastSequence = sequence;
-            session.LastPacketTimestamp = now;
-            return true;
-        }
-    }
-
     public SessionDeparture? RemoveConnection(string connectionId)
     {
         lock (_sync)
@@ -212,7 +182,5 @@ public sealed class SessionRegistry
         public string HostDisplayName { get; } = hostDisplayName;
         public Dictionary<string, SessionParticipant> Participants { get; } =
             new(StringComparer.Ordinal) { [hostConnectionId] = new SessionParticipant(hostDisplayName, true, hostConnectionId) };
-        public long LastSequence { get; set; } = -1;
-        public long LastPacketTimestamp { get; set; }
     }
 }
