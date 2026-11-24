@@ -83,6 +83,30 @@ public sealed class SessionRegistryTests
     }
 
     [Fact]
+    public void JoinSession_RejectsParticipantWhenSessionIsFull()
+    {
+        var registry = new SessionRegistry();
+        var invitation = registry.CreateSession("host", "Host");
+
+        for (var index = 1; index < 16; index++)
+            registry.JoinSession($"listener-{index}", invitation.Code, $"Listener {index}");
+
+        Assert.Throws<InvalidOperationException>(() =>
+            registry.JoinSession("listener-16", invitation.Code, "One too many"));
+    }
+
+    [Fact]
+    public void CreateSession_GeneratesDifferentCodesForSeparateSessions()
+    {
+        var registry = new SessionRegistry();
+
+        var first = registry.CreateSession("host-1", "Host 1");
+        var second = registry.CreateSession("host-2", "Host 2");
+
+        Assert.NotEqual(first.Code, second.Code);
+    }
+
+    [Fact]
     public void RemovingHost_EndsSessionAndDisconnectsParticipantsFromRegistry()
     {
         var registry = new SessionRegistry();

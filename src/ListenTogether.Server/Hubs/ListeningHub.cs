@@ -11,8 +11,16 @@ public sealed class ListeningHub(SessionRegistry sessions) : Hub
         try
         {
             var invitation = sessions.CreateSession(Context.ConnectionId, displayName);
-            await Groups.AddToGroupAsync(Context.ConnectionId, invitation.Code, Context.ConnectionAborted);
-            return invitation;
+            try
+            {
+                await Groups.AddToGroupAsync(Context.ConnectionId, invitation.Code, Context.ConnectionAborted);
+                return invitation;
+            }
+            catch
+            {
+                sessions.RemoveConnection(Context.ConnectionId);
+                throw;
+            }
         }
         catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
         {
@@ -25,10 +33,18 @@ public sealed class ListeningHub(SessionRegistry sessions) : Hub
         try
         {
             var result = sessions.JoinSession(Context.ConnectionId, code, displayName);
-            await Groups.AddToGroupAsync(Context.ConnectionId, result.Invitation.Code, Context.ConnectionAborted);
-            await Clients.OthersInGroup(result.Invitation.Code)
-                .SendAsync("ParticipantJoined", result.Participants.Last(), Context.ConnectionAborted);
-            return result;
+            try
+            {
+                await Groups.AddToGroupAsync(Context.ConnectionId, result.Invitation.Code, Context.ConnectionAborted);
+                await Clients.OthersInGroup(result.Invitation.Code)
+                    .SendAsync("ParticipantJoined", result.Participants.Last(), Context.ConnectionAborted);
+                return result;
+            }
+            catch
+            {
+                sessions.RemoveConnection(Context.ConnectionId);
+                throw;
+            }
         }
         catch (Exception exception) when (
             exception is ArgumentException or InvalidOperationException or KeyNotFoundException)

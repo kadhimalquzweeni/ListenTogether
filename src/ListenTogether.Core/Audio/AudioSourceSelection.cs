@@ -22,7 +22,7 @@ public sealed class AudioSourceSelection
         if (source.Kind != AudioSourceKind.System)
             throw new ArgumentException("The selected source must represent system audio.", nameof(source));
 
-        return new AudioSourceSelection(AudioSourceKind.System, [source]);
+        return new AudioSourceSelection(AudioSourceKind.System, Array.AsReadOnly(new[] { source }));
     }
 
     public static AudioSourceSelection Applications(IEnumerable<AudioSource> sources)
