@@ -8,6 +8,9 @@ public sealed record AudioFrame
 {
     public AudioFrame(ReadOnlyMemory<float> samples, AudioFormat format, DateTimeOffset capturedAtUtc)
     {
+        if (format.SampleRate <= 0 || format.Channels <= 0)
+            throw new ArgumentException("A valid audio format is required.", nameof(format));
+
         if (samples.Length % format.Channels != 0)
             throw new ArgumentException("The sample count must contain complete interleaved frames.", nameof(samples));
 

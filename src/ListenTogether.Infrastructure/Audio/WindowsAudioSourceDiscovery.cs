@@ -51,8 +51,7 @@ public sealed class WindowsAudioSourceDiscovery : IAudioSourceDiscovery
                     catch (Exception exception) when (
                         exception is InvalidOperationException or
                         Win32Exception or
-                        NotSupportedException or
-                        ObjectDisposedException)
+                        NotSupportedException)
                     {
                         // A process can exit or become inaccessible while the list is being refreshed.
                     }

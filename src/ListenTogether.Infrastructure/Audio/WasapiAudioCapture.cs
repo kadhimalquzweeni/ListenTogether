@@ -77,8 +77,8 @@ internal sealed class WasapiAudioCapture : IAudioCapture
     private void OnDataAvailable(
         ReadOnlySpan<byte> buffer,
         AudioClientBufferFlags flags,
-        ulong devicePosition,
-        ulong qpcPosition)
+        long devicePosition,
+        long qpcPosition)
     {
         if (Volatile.Read(ref _isDisposed) == 1 || buffer.IsEmpty)
             return;

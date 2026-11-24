@@ -12,7 +12,7 @@ public sealed class PcmSampleConverterTests
 
         var samples = PcmSampleConverter.FromIeeeFloat32LittleEndian(bytes);
 
-        Assert.Equal([0f, 0.25f, -0.5f, 1f], samples);
+        Assert.Equal(new[] { 0f, 0.25f, -0.5f, 1f }, samples);
     }
 
     [Fact]
@@ -37,7 +37,7 @@ public sealed class PcmSampleConverterTests
 
         var samples = PcmSampleConverter.FromIeeeFloat32LittleEndian(bytes);
 
-        Assert.Equal([0f, 0f, 0f, 0.5f], samples);
+        Assert.Equal(new[] { 0f, 0f, 0f, 0.5f }, samples);
     }
 
     private static byte[] Encode(params float[] samples)
