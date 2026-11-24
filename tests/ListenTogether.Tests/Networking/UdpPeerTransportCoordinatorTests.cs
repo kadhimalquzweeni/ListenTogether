@@ -74,6 +74,43 @@ public sealed class UdpPeerTransportCoordinatorTests
     }
 
     [Fact]
+    public async Task MissingCandidate_IsReportedAndConnectivityRetriesWhenCandidateArrives()
+    {
+        var network = new FakeNetwork(SessionId);
+        var hostSignalling = network.AddPeer("host");
+        var listenerSignalling = network.AddPeer("listener");
+        using var hostCandidates = new UdpPeerCandidateCoordinator(hostSignalling, new LoopbackCandidateGatherer());
+        using var listenerCandidates = new UdpPeerCandidateCoordinator(listenerSignalling, new LoopbackCandidateGatherer());
+        using var hostKeys = new PeerKeyNegotiationCoordinator(hostSignalling);
+        using var listenerKeys = new PeerKeyNegotiationCoordinator(listenerSignalling);
+        await hostCandidates.StartAsync(new Uri("http://127.0.0.1:5000"));
+
+        var secured = new CountdownEvent(2);
+        hostKeys.PeerSecured += (_, _) => secured.Signal();
+        listenerKeys.PeerSecured += (_, _) => secured.Signal();
+        await Task.WhenAll(hostKeys.BeginPeerAsync("listener"), listenerKeys.BeginPeerAsync("host"));
+        Assert.True(secured.Wait(TimeSpan.FromSeconds(5)));
+
+        await using var hostTransport = new UdpPeerTransportCoordinator(hostCandidates, hostKeys, SessionId);
+        var failed = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var reconnected = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var attempts = 0;
+        hostTransport.PeerConnectionFailed += (_, reason) => failed.TrySetResult(reason);
+        hostTransport.PeerConnectionAttemptStarted += _ => Interlocked.Increment(ref attempts);
+        hostTransport.PeerConnected += (_, _) => reconnected.TrySetResult();
+        await hostTransport.StartAsync();
+
+        Assert.Contains("No remote UDP candidates", await failed.Task.WaitAsync(TimeSpan.FromSeconds(5)));
+
+        await listenerCandidates.StartAsync(new Uri("http://127.0.0.1:5000"));
+        await using var listenerTransport = new UdpPeerTransportCoordinator(listenerCandidates, listenerKeys, SessionId);
+        await listenerTransport.StartAsync();
+
+        await reconnected.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.True(Volatile.Read(ref attempts) >= 2);
+        Assert.Contains("listener", hostTransport.ConnectedPeers);
+    }
+    [Fact]
     public async Task AuthenticatedConnectivityCheck_CanUpdateChangedRemoteEndpoint()
     {
         var network = new FakeNetwork(SessionId);
