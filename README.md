@@ -19,6 +19,7 @@ Listeners join with an eight-character invite code and hear the host's live mix.
 - 20 ms Opus encoding/decoding using Concentus.
 - Low-latency Windows audio playback with a bounded buffer.
 - SignalR relay server for creating sessions, joining by invite code, participant events, and relaying audio packets.
+- Cloudflare Worker + Durable Object edge relay for internet sessions without router port forwarding, with outbound WSS connections and batched Opus frames.
 - Automated tests for domain validation, PCM conversion, mixing, Opus codec round-trips, playback buffering, and session registry rules.
 - Windows CI builds the complete solution and runs the tests.
 
@@ -127,7 +128,8 @@ The relay is a central media relay rather than peer-to-peer WebRTC. This avoids 
 | `ListenTogether.App` | WPF home screen, source picker, host window, listener window, view models |
 | `ListenTogether.Core` | Audio source, PCM, and session domain models |
 | `ListenTogether.Infrastructure` | Windows process discovery, WASAPI capture, PCM mixing, Opus codec, playback, SignalR client |
-| `ListenTogether.Server` | SignalR hub, invite-code registry, participant state, audio packet relay |
+| `ListenTogether.Server` | Local/LAN SignalR hub, invite-code registry, participant state, audio packet relay |
+| `cloudflare/worker` | Public no-router SignalR-compatible edge relay and session coordination |
 | `ListenTogether.Tests` | Automated unit tests |
 
 ## Important behaviour and limitations
