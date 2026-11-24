@@ -6,8 +6,9 @@ using Microsoft.AspNetCore.SignalR.Client;
 namespace ListenTogether.Infrastructure.Networking;
 
 /// <summary>
-/// SignalR connection to the ListenTogether relay. A session invite code is the
-/// bearer credential; the relay forwards Opus packets and does not persist audio.
+/// SignalR connection to the ListenTogether signalling and relay service.
+/// SignalR currently carries session events and relayed Opus packets; peer
+/// candidate exchange prepares sessions for direct UDP transport.
 /// </summary>
 public sealed class SignalRSessionClient : IAsyncDisposable
 {
@@ -33,6 +34,8 @@ public sealed class SignalRSessionClient : IAsyncDisposable
             ParticipantJoined?.Invoke(participant));
         _connection.On<SessionParticipant>("ParticipantLeft", participant =>
             ParticipantLeft?.Invoke(participant));
+        _connection.On<PeerCandidateMessage>("PeerCandidateReceived", message =>
+            PeerCandidateReceived?.Invoke(message));
         _connection.On<string>("SessionEnded", reason =>
         {
             _sessionCode = null;
@@ -51,6 +54,7 @@ public sealed class SignalRSessionClient : IAsyncDisposable
     public event Action<byte[], long>? AudioPacketReceived;
     public event Action<SessionParticipant>? ParticipantJoined;
     public event Action<SessionParticipant>? ParticipantLeft;
+    public event Action<PeerCandidateMessage>? PeerCandidateReceived;
     public event Action<string>? SessionEnded;
     public event Action<Exception?>? ConnectionClosed;
 
@@ -92,6 +96,21 @@ public sealed class SignalRSessionClient : IAsyncDisposable
         _sessionCode = result.Invitation.Code;
         _isHost = false;
         return result;
+    }
+
+    /// <summary>Publishes a validated UDP candidate to the other session participants.</summary>
+    public Task PublishPeerCandidateAsync(
+        PeerCandidate candidate,
+        CancellationToken cancellationToken = default)
+    {
+        ThrowIfDisposed();
+        if (!IsConnected || string.IsNullOrEmpty(_sessionCode))
+            throw new InvalidOperationException("Join a connected session before publishing peer candidates.");
+        ArgumentNullException.ThrowIfNull(candidate);
+        if (!candidate.IsValid)
+            throw new ArgumentException("The peer candidate is invalid.", nameof(candidate));
+
+        return _connection.InvokeAsync("PublishPeerCandidate", candidate, cancellationToken);
     }
 
     public Task SendAudioPacketAsync(

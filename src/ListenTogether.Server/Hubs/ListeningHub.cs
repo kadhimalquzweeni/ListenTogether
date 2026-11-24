@@ -53,6 +53,25 @@ public sealed class ListeningHub(SessionRegistry sessions) : Hub
         }
     }
 
+    /// <summary>
+    /// Exchanges UDP endpoint candidates with other participants in this session.
+    /// This is signalling only: media continues to use the existing relay until
+    /// the direct transport has completed its handshake and fallback implementation.
+    /// </summary>
+    public async Task PublishPeerCandidate(PeerCandidate candidate)
+    {
+        if (candidate is null || !candidate.IsValid)
+            throw new HubException("The peer candidate is invalid.");
+
+        if (!sessions.TryGetSessionCode(Context.ConnectionId, out var code))
+            throw new HubException("Join a listening session before publishing peer candidates.");
+
+        await Clients.OthersInGroup(code).SendAsync(
+            "PeerCandidateReceived",
+            new PeerCandidateMessage(Context.ConnectionId, candidate),
+            Context.ConnectionAborted);
+    }
+
     public async Task SendAudioPacket(byte[] packet, long sequence)
     {
         if (packet is null || !sessions.TryAcceptAudioPacket(Context.ConnectionId, sequence, packet.Length))

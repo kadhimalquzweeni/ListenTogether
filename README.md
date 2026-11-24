@@ -1,6 +1,6 @@
 # ListenTogether
 
-**ListenTogether** is a Windows desktop app for sharing the audio playing on your PC with friends in a live listening session. It captures audio locally, mixes selected sources, encodes the mix with Opus, and streams it through a small SignalR relay server.
+**ListenTogether** is a Windows desktop app for sharing the audio playing on your PC with friends in a live listening session. It captures audio locally, mixes selected sources, encodes the mix with Opus, and streams it to listeners.
 
 The host can share either:
 
@@ -11,37 +11,31 @@ Listeners join with an eight-character invite code and hear the host's live mix.
 
 ## Current capabilities
 
-- .NET 10 WPF desktop application with a consistent dark UI.
-- Windows process discovery for visible desktop applications.
-- WASAPI loopback capture for all system output.
-- Windows process-loopback capture for an individual app and its child process tree.
-- Multi-source 48 kHz stereo float PCM mixer with per-source gain, bounded buffering, silence on underflow, and output clipping protection.
+- .NET 10 WPF desktop application.
+- Windows process discovery, WASAPI system loopback and per-application process-loopback capture.
+- Multi-source 48 kHz stereo PCM mixing with per-source gain and bounded buffering.
 - 20 ms Opus encoding/decoding using Concentus.
 - Low-latency Windows audio playback with a bounded buffer.
-- SignalR relay server for creating sessions, joining by invite code, participant events, and relaying audio packets.
-- Automated tests for domain validation, PCM conversion, mixing, Opus codec round-trips, playback buffering, and session registry rules.
-- Windows CI builds the complete solution and runs the tests.
+- SignalR sessions with eight-character invite codes, participant events and the existing Opus media relay.
+- Basic RFC 8489 STUN Binding server.
+- Session-scoped UDP peer-candidate signalling groundwork.
+- Automated tests for audio, codec, session, STUN and signalling behaviour.
+
+## Intended user experience
+
+Anyone can install the desktop application, create a session, share an invite code, and let friends listen from other networks. Users should not need to configure routers, install VPN adapters, or run server software.
+
+The target networking model is inspired by Parsec's general approach: public signalling and STUN coordinate peers, direct encrypted UDP carries audio when possible, and a separately deployed public relay provides fallback. The current implementation still uses SignalR for audio; direct UDP and public relay fallback are not implemented yet.
 
 ## Requirements
 
-### Desktop app
-
+- Windows 10/11 x64.
 - Windows 10 version 2004 (build 19041) or later for per-application capture.
-- Windows 10/11.
-- **Packaged Windows x64 release:** Windows 10/11 x64; the self-contained app does not require a separately installed .NET runtime.
-- **Build from source:** .NET 10 SDK and Visual Studio 2022 with the .NET desktop development workload.
-
-### Relay server
-
-One of:
-- .NET 10 SDK to run it directly, or
-- Docker / Docker Compose.
-
-The relay server is required for sessions. It forwards encoded audio packets and keeps session state in memory; it does not record or persist audio.
+- .NET 10 SDK and Visual Studio 2022 for building from source.
 
 ## Run locally
 
-### 1. Start the relay server
+### 1. Start the development relay
 
 From the repository root:
 
@@ -49,92 +43,32 @@ From the repository root:
 docker compose up --build
 ```
 
-The relay will be available at `http://localhost:5000`. Alternatively, run it directly:
-
-```powershell
-dotnet run --project src/ListenTogether.Server
-```
-
-The server health endpoint is `http://localhost:5000/healthz`.
+The development relay is available at `http://localhost:5000`.
 
 ### 2. Start the desktop app
 
-Open `ListenTogether.sln` in Visual Studio, set `ListenTogether.App` as the startup project, then run it.
+Open `ListenTogether.sln` in Visual Studio, set `ListenTogether.App` as the startup project, and run it.
 
-On the home screen:
-1. Set **Relay server** to `http://localhost:5000`.
-2. Enter the name you want other listeners to see. The relay URL and display name are saved in your Windows user profile for the next launch.
-3. Choose **Create session**.
-4. Select **All system audio** or **Selected applications**.
-5. Adjust the source volumes and mute controls.
-6. Select **Start sharing** and share the invite code with your listeners.
+Set the relay URL to `http://localhost:5000`, enter a display name, create a session, select audio sources, and start sharing.
 
 ### 3. Join from another desktop
 
-The listener must be able to reach the same relay URL. Enter that URL and the invite code on the home screen, then select **Join session**.
+Both clients must use the same reachable signalling URL. For local development, this can be a LAN address. For real users on arbitrary networks, the public signalling and relay services must be deployed separately with HTTPS/WSS and public UDP reachability.
 
-For two PCs on the same network, use the host PC's LAN address in the relay URL, for example `http://192.168.1.20:5000`, and allow inbound TCP port 5000 through the host firewall.
+## Networking roadmap
 
-For friends connecting over the internet, deploy the relay behind a public HTTPS domain. See [Relay deployment](docs/DEPLOYMENT.md). Do not expose an unencrypted HTTP relay to the public internet.
-
-## How the audio path works
-
-```text
-Windows audio sources
-  ├─ Default output loopback
-  └─ Selected process loopback
-           |
-           v
-     PCM source buffers
-           |
-           v
-       PCM mixer
-   (per-app gain / mute)
-           |
-           v
-   48 kHz stereo float PCM
-           |
-           v
-       Opus encoder
-      (20 ms packets)
-           |
-           v
-    SignalR relay server
-      /hubs/listening
-           |
-           v
-       Opus decoder
-           |
-           v
-     Bounded PCM buffer
-           |
-           v
-    Windows audio output
-```
-
-The relay is a central media relay rather than peer-to-peer WebRTC. This avoids requiring each listener to establish a direct NAT traversal connection, but the relay host uses bandwidth for every listener. At the default Opus bitrate, allow roughly 128 kbit/s of host upload per listener, plus protocol overhead.
-
-## Architecture
-
-| Project | Responsibility |
-| --- | --- |
-| `ListenTogether.App` | WPF home screen, source picker, host window, listener window, view models |
-| `ListenTogether.Core` | Audio source, PCM, and session domain models |
-| `ListenTogether.Infrastructure` | Windows process discovery, WASAPI capture, PCM mixing, Opus codec, playback, SignalR client |
-| `ListenTogether.Server` | SignalR hub, invite-code registry, participant state, audio packet relay |
-| `ListenTogether.Tests` | Automated unit tests |
+See [Networking architecture](docs/NETWORKING_ARCHITECTURE.md) for the target Parsec-inspired connection model, implementation status, and deployment requirements.
 
 ## Important behaviour and limitations
 
-- System audio capture uses the default Windows render device.
-- Per-application capture uses the Windows process-loopback API and includes the selected process tree. If the app is not currently playing audio, it may not produce samples.
-- The server currently stores session state in memory. Restarting the server ends all active sessions.
-- A host disconnect ends that session; automatic session resumption is not implemented yet.
-- The relay supports up to 16 participants per session, including the host.
-- Invite codes are bearer credentials: anyone who has the code can join. Share them privately.
+- The server currently stores session state in memory. Restarting it ends active sessions.
+- The existing SignalR audio relay is still the only implemented media transport.
+- Direct UDP peer-to-peer audio, NAT traversal, media encryption and relay fallback are not yet implemented.
+- STUN discovers mapped addresses; it does not itself make a host reachable or relay media.
+- The current relay supports up to 16 participants per session, including the host.
+- Invite codes are bearer credentials: anyone with a code can join. Share them privately.
 - The server does not save audio packets or create recordings.
-- Public deployments should use HTTPS/WSS through a trusted reverse proxy.
-- Some protected media or application-specific audio paths may not be capturable. ListenTogether does not bypass DRM or other content protections.
+- Some protected media paths may not be capturable. ListenTogether does not bypass DRM or other content protections.
 - Only share audio you have the right to share.
 
 ## Build and test
@@ -144,11 +78,3 @@ dotnet restore ListenTogether.sln
 dotnet build ListenTogether.sln --configuration Release --no-restore
 dotnet test ListenTogether.sln --configuration Release --no-build --no-restore
 ```
-
-## Desktop release
-
-The release workflow publishes a self-contained Windows x64 desktop package when a version tag (`v*`) is pushed. The relay server is deployed separately; the desktop package does not bundle a public relay service.
-
-## Deployment
-
-See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for local Docker, LAN testing, and public HTTPS relay deployment. Use [docs/SMOKE_TEST.md](docs/SMOKE_TEST.md) to verify real Windows audio capture and playback.
