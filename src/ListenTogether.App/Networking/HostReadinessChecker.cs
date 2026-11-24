@@ -38,10 +38,12 @@ public sealed class HostReadinessChecker : IHostReadinessChecker
         if (serverUri.Scheme is not ("http" or "https"))
             return new HostReadinessResult(false, "The server address must use HTTP or HTTPS.");
 
+        using var healthTimeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        healthTimeout.CancelAfter(TimeSpan.FromSeconds(5));
         try
         {
             using var response = await _httpClient.GetAsync(
-                new Uri(serverUri, "/healthz"), HttpCompletionOption.ResponseHeadersRead, cancellationToken)
+                new Uri(serverUri, "/healthz"), HttpCompletionOption.ResponseHeadersRead, healthTimeout.Token)
                 .ConfigureAwait(false);
             if (!response.IsSuccessStatusCode)
                 return new HostReadinessResult(false,
