@@ -41,7 +41,7 @@ Open PowerShell as Administrator in the repository root and run:
 
     .\scripts\home-server\Setup-ListenTogether.ps1
 
-This creates inbound Windows Firewall rules for TCP 80/443 and UDP 3478, detects the PC's LAN IPv4 addresses, and prints the exact router forwarding table. Reserve the selected LAN address in your router's DHCP settings so it does not change.
+This creates inbound Windows Firewall rules for TCP 80/443 and UDP 3478, then lists LAN IPv4 addresses with their adapter names. Choose the address belonging to the Ethernet/Wi-Fi adapter connected to your router (not a VPN adapter). It prints the exact router entries to create. Replace `<HOST_LAN_IP>` with that address, add each rule or edit an existing one to match, save/apply, and create a DHCP reservation for that same address.
 
 The script deliberately does not attempt to log in to or modify your router: router interfaces and APIs vary, and guessing could change unrelated settings. You must add the three forwarding rules shown by the script.
 
@@ -72,7 +72,7 @@ After the host has started the server, copy the public IPv4 address and send it 
 
     .\scripts\home-server\Test-HomeServer.ps1 -Server "YOUR_PUBLIC_IP"
 
-The diagnostic tests TCP 80, TCP 443, and an actual STUN Binding request over UDP 3478. It reports each result separately. For every failure, it prints the corresponding router forwarding rule and host-side checks to investigate. It exits with code 1 if any required endpoint is unreachable, making it suitable for troubleshooting or automation.
+The diagnostic tests TCP 80, TCP 443, and an actual STUN Binding request over UDP 3478. For every failure, it prints a complete router rule to add or correct: rule name, protocol, external port, internal port, target LAN IP, enabled status, and source-IP/schedule guidance. It also lists the corresponding Windows Firewall and service checks. If `-HostLanIp` is omitted, it still prints the required ports and protocols but tells you to obtain the internal destination IP from the host setup script. A failed outside test cannot prove which router field is wrong; it identifies the required target rule and then lists host/ISP checks if the rule already matches.
 
 Run this test from outside the host's home network. Some routers do not support NAT loopback, so testing your own public IP from your home Wi-Fi can report false failures. A TCP port check cannot prove UDP forwarding; the STUN request tests UDP 3478 specifically.
 
@@ -97,7 +97,9 @@ A successful result prints the public UDP IP:port mapping observed by STUN. Runn
 | Public IP detection fails | Check internet access and whether both IP discovery services are reachable. |
 | The two IP services disagree | The launcher intentionally stops; retry later rather than issuing a certificate for an uncertain address. |
 | Local health check fails | Server process failed, wrong publish path, or port 5000 is occupied. Check the server console and Windows Event Viewer. |
-| Local health works, public HTTPS fails | Run Test-HomeServer.ps1 from your friend's network. If TCP 80 or 443 fails, check the exact forwarding rule it reports, Windows Firewall, Caddy logs, and whether another program uses ports 80/443. |
+| TCP 80 fails externally | Add/correct a TCP forward: external 80 -> host LAN IP port 80. Also check Windows Firewall and Caddy. |
+| TCP 443 fails externally | Add/correct a TCP forward: external 443 -> host LAN IP port 443. Also check Windows Firewall and Caddy. |
+| UDP 3478 fails externally | Add/correct a UDP forward: external 3478 -> host LAN IP port 3478. Also check Windows Firewall and the ListenTogether server. |
 | Caddy cannot obtain a certificate | Public IP must be reachable on TCP 80 from the internet. Check ISP inbound-port restrictions and Caddy logs. |
 | HTTPS works but STUN test times out | Run Test-HomeServer.ps1 from your friend's network. Check its UDP 3478 result, the server listener, Windows Firewall and router UDP forwarding. TCP port tests do not test UDP. |
 | STUN works but peers cannot connect | STUN only discovers public mappings. Symmetric NAT, VPNs, enterprise firewalls, or restrictive UDP policies can still prevent hole punching. |
