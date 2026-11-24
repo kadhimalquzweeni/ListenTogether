@@ -38,7 +38,6 @@ public sealed class ListeningViewModel : INotifyPropertyChanged, IAsyncDisposabl
         _peerNegotiation = new PeerKeyNegotiationCoordinator(_client);
         _peerNegotiation.PeerSecured += OnPeerSecured;
         _peerCandidates = new UdpPeerCandidateCoordinator(_client);
-        _client.AudioPacketReceived += OnAudioPacketReceived;
         _client.ParticipantJoined += OnParticipantJoined;
         _client.ParticipantLeft += OnParticipantLeft;
         _client.SessionEnded += OnSessionEnded;
@@ -122,12 +121,11 @@ public sealed class ListeningViewModel : INotifyPropertyChanged, IAsyncDisposabl
 
                 try
                 {
-                    await _peerCandidates.StartAsync(
-                        _serverUri,
-                        stunTimeout: TimeSpan.FromSeconds(2));
-                    _udpTransport = new UdpPeerTransportCoordinator(
-                        _peerCandidates, _peerNegotiation, _client.SessionId);
+                    await _peerCandidates.StartAsync(_serverUri, stunTimeout: TimeSpan.FromSeconds(2));
+                    _udpTransport = new UdpPeerTransportCoordinator(_peerCandidates, _peerNegotiation, _client.SessionId);
                     _udpTransport.PeerConnected += OnDirectPeerConnected;
+                    _udpTransport.PeerConnectionAttemptStarted += OnPeerConnectionAttemptStarted;
+                    _udpTransport.PeerConnectionFailed += OnPeerConnectionFailed;
                     _udpTransport.AudioPacketReceived += OnDirectAudioPacketReceived;
                     await _udpTransport.StartAsync();
                 }
@@ -138,20 +136,26 @@ public sealed class ListeningViewModel : INotifyPropertyChanged, IAsyncDisposabl
                         await _udpTransport.DisposeAsync();
                         _udpTransport = null;
                     }
-                    StatusMessage = $"UDP discovery unavailable; audio will use the SignalR relay. {exception.Message}";
+                    _peerCandidates.Dispose();
+                    await _client.LeaveSessionAsync();
+                    if (_playback is not null)
+                    {
+                        await _playback.DisposeAsync();
+                        _playback = null;
+                    }
+                    StatusMessage = $"Couldn't establish direct UDP transport: {exception.Message}. Audio is never relayed through the server.";
+                    return;
                 }
 
                 HostDisplayName = result.HostDisplayName;
                 ParticipantCount = result.Participants.Count;
                 IsConnected = true;
                 _playback.Start();
-                StatusMessage = _udpTransport is not null
-                    ? $"You're listening with {HostDisplayName}. Direct UDP is being negotiated; relay fallback is active."
-                    : $"You're listening with {HostDisplayName} (relay mode).";
+                StatusMessage = $"You're listening with {HostDisplayName}. Establishing a secure direct UDP audio connection…";
             }
             catch (Exception exception)
             {
-                StatusMessage = $"Couldn't join the session: {exception.Message}";
+                StatusMessage = $"Couldn't join the session: {exception.Message}. ListenTogether requires direct UDP; server audio relay is disabled.";
             }
             finally
             {
@@ -188,6 +192,8 @@ public sealed class ListeningViewModel : INotifyPropertyChanged, IAsyncDisposabl
         if (_udpTransport is not null)
         {
             _udpTransport.PeerConnected -= OnDirectPeerConnected;
+            _udpTransport.PeerConnectionAttemptStarted -= OnPeerConnectionAttemptStarted;
+            _udpTransport.PeerConnectionFailed -= OnPeerConnectionFailed;
             _udpTransport.AudioPacketReceived -= OnDirectAudioPacketReceived;
             await _udpTransport.DisposeAsync();
             _udpTransport = null;
@@ -211,7 +217,6 @@ public sealed class ListeningViewModel : INotifyPropertyChanged, IAsyncDisposabl
         await _lifecycle.WaitAsync();
         try
         {
-            _client.AudioPacketReceived -= OnAudioPacketReceived;
             _peerNegotiation.PeerSecured -= OnPeerSecured;
             _client.ParticipantJoined -= OnParticipantJoined;
             _client.ParticipantLeft -= OnParticipantLeft;
@@ -252,7 +257,13 @@ public sealed class ListeningViewModel : INotifyPropertyChanged, IAsyncDisposabl
         => NotifyOnUi(() => StatusMessage = $"A secure peer link has been established; direct UDP connectivity is being checked.");
 
     private void OnDirectPeerConnected(string peerConnectionId, System.Net.IPEndPoint endpoint)
-        => NotifyOnUi(() => StatusMessage = $"Direct UDP audio connection established with {peerConnectionId}.");
+        => NotifyOnUi(() => StatusMessage = $"Secure direct UDP audio connection established with peer {peerConnectionId}.");
+
+    private void OnPeerConnectionAttemptStarted(string peerConnectionId)
+        => NotifyOnUi(() => StatusMessage = $"Negotiating direct UDP with peer {peerConnectionId}…");
+
+    private void OnPeerConnectionFailed(string peerConnectionId, string reason)
+        => NotifyOnUi(() => StatusMessage = $"Direct UDP connection to peer {peerConnectionId} is not established. {reason}");
 
     private void OnDirectAudioPacketReceived(string peerConnectionId, byte[] packet, ulong sequence)
         => _jitterBuffer.TryEnqueue(sequence, packet);
@@ -298,13 +309,6 @@ public sealed class ListeningViewModel : INotifyPropertyChanged, IAsyncDisposabl
 
         _jitterTask = null;
         _jitterBuffer.Clear();
-    }
-
-    private void OnAudioPacketReceived(byte[] packet, long sequence)
-    {
-        if (sequence <= 0)
-            return;
-        _jitterBuffer.TryEnqueue((ulong)sequence, packet);
     }
 
     private void PlayAudioPacket(byte[] packet)
@@ -353,8 +357,8 @@ public sealed class ListeningViewModel : INotifyPropertyChanged, IAsyncDisposabl
             ParticipantCount = 0;
             _playback?.Clear();
             StatusMessage = exception is null
-                ? "Connection to the relay was closed."
-                : $"Connection to the relay was lost: {exception.Message}";
+                ? "Connection to the signalling server was closed."
+                : $"Connection to the signalling server was lost: {exception.Message}";
         });
 
     private void NotifyOnUi(Action action)
