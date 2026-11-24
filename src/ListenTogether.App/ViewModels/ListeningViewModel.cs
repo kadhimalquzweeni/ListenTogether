@@ -180,7 +180,7 @@ public sealed class ListeningViewModel : INotifyPropertyChanged, IAsyncDisposabl
         => NotifyOnUi(() =>
         {
             IsConnected = false;
-            _playback.Clear();
+            _playback?.Clear();
             StatusMessage = reason;
         });
 
