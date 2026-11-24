@@ -44,7 +44,8 @@ public sealed class OpusAudioEncoder : IDisposable
         var packets = new List<byte[]>();
         foreach (var sample in frame.Samples.Span)
         {
-            var scaled = (int)MathF.Round(Math.Clamp(sample, -1f, 1f) * short.MaxValue);
+            var finiteSample = float.IsFinite(sample) ? sample : 0f;
+            var scaled = (int)MathF.Round(Math.Clamp(finiteSample, -1f, 1f) * 32_768f);
             _pending[_pendingSamples++] = (short)Math.Clamp(scaled, short.MinValue, short.MaxValue);
 
             if (_pendingSamples != _pending.Length)
@@ -65,13 +66,6 @@ public sealed class OpusAudioEncoder : IDisposable
         }
 
         return packets;
-    }
-
-    public void Reset()
-    {
-        ObjectDisposedException.ThrowIf(_isDisposed, this);
-        Array.Clear(_pending);
-        _pendingSamples = 0;
     }
 
     public void Dispose()

@@ -73,6 +73,22 @@ public sealed class OpusAudioCodecTests
     }
 
     [Fact]
+    public void Encode_ReplacesNonFiniteInputSamplesWithSilence()
+    {
+        var encoder = new OpusAudioEncoder();
+        var decoder = new OpusAudioDecoder();
+        var samples = new float[OpusAudioEncoder.FrameSamplesPerChannel * AudioFormat.Broadcast.Channels];
+        samples[0] = float.NaN;
+        samples[1] = float.PositiveInfinity;
+        samples[2] = float.NegativeInfinity;
+
+        var packet = Assert.Single(encoder.Encode(Frame(samples)));
+        var decoded = decoder.Decode(packet);
+
+        Assert.All(decoded.Samples.ToArray(), sample => Assert.True(float.IsFinite(sample)));
+    }
+
+    [Fact]
     public void Decode_RejectsEmptyPacket()
     {
         var decoder = new OpusAudioDecoder();
