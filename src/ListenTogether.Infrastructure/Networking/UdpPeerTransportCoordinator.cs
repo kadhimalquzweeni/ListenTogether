@@ -228,6 +228,10 @@ public sealed class UdpPeerTransportCoordinator : IAsyncDisposable
         {
             // Normal teardown.
         }
+        catch (ObjectDisposedException)
+        {
+            // The participant left while checks were in flight.
+        }
         finally
         {
             state.FinishChecks();
