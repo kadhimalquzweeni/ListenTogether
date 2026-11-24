@@ -15,7 +15,6 @@ builder.Services.AddHealthChecks();
 
 var app = builder.Build();
 
-app.UseHttpsRedirection();
 app.MapHealthChecks("/healthz");
 app.MapGet("/", () => Results.Ok(new
 {
