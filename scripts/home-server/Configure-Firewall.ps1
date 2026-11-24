@@ -7,8 +7,8 @@ $rules = @(
     @{ Name = "$RulePrefix - STUN"; Protocol = "UDP"; LocalPort = 3478 }
 )
 foreach ($rule in $rules) {
-    Get-NetFirewallRule -DisplayName $rule.Name -ErrorAction SilentlyContinue | Remove-NetFirewallRule
-    if ($PSCmdlet.ShouldProcess("$($rule.Protocol) port $($rule.LocalPort)", "Create $($rule.Name)")) {
+    if ($PSCmdlet.ShouldProcess("$($rule.Protocol) port $($rule.LocalPort)", "Replace firewall rule $($rule.Name)")) {
+        Get-NetFirewallRule -DisplayName $rule.Name -ErrorAction SilentlyContinue | Remove-NetFirewallRule
         New-NetFirewallRule -DisplayName $rule.Name -Direction Inbound -Action Allow -Protocol $rule.Protocol -LocalPort $rule.LocalPort -Profile Domain,Private,Public | Out-Null
     }
 }
