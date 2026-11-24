@@ -27,9 +27,9 @@ Listeners join with an eight-character invite code and hear the host's live mix.
 
 ## Intended user experience
 
-Anyone can install the desktop application, create a session, share an invite code, and let friends listen from other networks. Users should not need to configure routers, install VPN adapters, or run server software.
+The initial deployment is intended for a private setup between two friends. The host can run the signalling and STUN services on their own Windows PC, detect their current public IPv4 at startup, and share that IP address plus the session invite code. The listener enters those details in the desktop app. No domain or dynamic DNS provider is required for this setup.
 
-The networking model follows the same broad pattern used by low-latency peer applications: SignalR handles session signalling, STUN discovers UDP mappings, peers attempt encrypted direct UDP, and SignalR relays audio to listeners without a working direct path. The direct UDP media path and per-listener fallback are implemented. STUN and the signalling/relay service still need to be publicly reachable for users on arbitrary networks.
+The networking model follows the same broad pattern used by low-latency peer applications: SignalR handles session signalling, STUN discovers UDP mappings, peers attempt encrypted direct UDP, and the current implementation relays audio to listeners without a working direct path. The direct UDP media path and per-listener fallback are implemented. STUN and the signalling/relay service still need to be publicly reachable for users on arbitrary networks.
 
 ## Requirements
 
@@ -57,7 +57,7 @@ Set the relay URL to `http://localhost:5000`, enter a display name, create a ses
 
 ### 3. Join from another desktop
 
-Both clients must use the same reachable signalling URL. For local development, this can be a LAN address. For real users on arbitrary networks, the public signalling and relay services must be deployed separately with HTTPS/WSS and public UDP reachability.
+Both clients must use the same reachable signalling URL. For the private home-hosted setup, use the host's detected `https://PUBLIC_IP` address and the invite code. The home server guide explains router forwarding and certificate setup.
 
 ## Networking and testing
 
@@ -69,8 +69,8 @@ See [Networking architecture](docs/NETWORKING_ARCHITECTURE.md) for the connectio
 - Direct UDP is attempted per listener; restricted or symmetric NATs may prevent a direct path, in which case that listener remains on the SignalR relay.
 - The current STUN implementation is IPv4-only. STUN discovers mapped addresses; it does not itself make a host reachable or relay media.
 - The server's STUN endpoint uses UDP port 3478. Internet deployments must expose that UDP port as well as the SignalR HTTPS endpoint.
-- A self-hosted server on a home PC behind NAT is not reachable by arbitrary internet users without a public endpoint, router forwarding, or a network tunnel. Clients do not need router configuration, but the server itself must be publicly reachable.
-- The supplied production Compose template currently expects a DNS name for Caddy-managed HTTPS; a domain-free public TLS deployment is not automated yet.
+- A self-hosted server on a home PC behind NAT is not reachable without a public endpoint and router forwarding. Clients do not need router configuration, but the server PC must be publicly reachable.
+- The home-hosting setup uses Let's Encrypt IP-address certificates with the `shortlived` ACME profile. These certificates last 160 hours and must be renewed automatically by Caddy.
 - The current relay supports up to 16 participants per session, including the host.
 - Invite codes are bearer credentials: anyone with a code can join. Share them privately.
 - The server does not save audio packets or create recordings.
