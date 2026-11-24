@@ -6,9 +6,8 @@ using Microsoft.AspNetCore.SignalR.Client;
 namespace ListenTogether.Infrastructure.Networking;
 
 /// <summary>
-/// SignalR connection to the ListenTogether signalling and relay service.
-/// SignalR currently carries session events and relayed Opus packets; peer
-/// candidate exchange prepares sessions for direct UDP transport.
+/// SignalR connection used only for session signalling and peer negotiation.
+/// Audio media is never sent through this connection.
 /// </summary>
 public sealed class SignalRSessionClient : IAsyncDisposable, IPeerKeySignalling
 {
@@ -22,15 +21,13 @@ public sealed class SignalRSessionClient : IAsyncDisposable, IPeerKeySignalling
     {
         ArgumentNullException.ThrowIfNull(serverUri);
         if (!serverUri.IsAbsoluteUri || serverUri.Scheme is not ("http" or "https"))
-            throw new ArgumentException("The relay address must be an absolute HTTP or HTTPS URL.", nameof(serverUri));
+            throw new ArgumentException("The server address must be an absolute HTTP or HTTPS URL.", nameof(serverUri));
 
         var hubUri = new Uri(serverUri, "/hubs/listening");
         _connection = new HubConnectionBuilder()
             .WithUrl(hubUri, options => options.Transports = HttpTransportType.WebSockets)
             .Build();
 
-        _connection.On<byte[], long>("ReceiveAudioPacket", (packet, sequence) =>
-            AudioPacketReceived?.Invoke(packet, sequence));
         _connection.On<SessionParticipant>("ParticipantJoined", participant =>
             ParticipantJoined?.Invoke(participant));
         _connection.On<SessionParticipant>("ParticipantLeft", participant =>
@@ -60,7 +57,6 @@ public sealed class SignalRSessionClient : IAsyncDisposable, IPeerKeySignalling
         };
     }
 
-    public event Action<byte[], long>? AudioPacketReceived;
     public event Action<SessionParticipant>? ParticipantJoined;
     public event Action<SessionParticipant>? ParticipantLeft;
     public event Action<PeerCandidateMessage>? PeerCandidateReceived;
@@ -168,38 +164,6 @@ public sealed class SignalRSessionClient : IAsyncDisposable, IPeerKeySignalling
             "PublishPeerKeyProof", _sessionId, toConnectionId, transcriptHash, proof, cancellationToken);
     }
 
-    public Task SendAudioPacketAsync(
-        byte[] packet,
-        long sequence,
-        CancellationToken cancellationToken = default) =>
-        SendAudioPacketAsync(packet, sequence, Array.Empty<string>(), cancellationToken);
-
-    public Task SendAudioPacketAsync(
-        byte[] packet,
-        long sequence,
-        IReadOnlyCollection<string> excludedConnectionIds,
-        CancellationToken cancellationToken = default)
-    {
-        ThrowIfDisposed();
-        if (!IsConnected || !_isHost || string.IsNullOrEmpty(_sessionCode))
-            throw new InvalidOperationException("Only a connected session host can send audio.");
-
-        if (packet is null || packet.Length is < 1 or > 1_275)
-            throw new ArgumentOutOfRangeException(nameof(packet), "Opus packets must contain between 1 and 1,275 bytes.");
-        ArgumentNullException.ThrowIfNull(excludedConnectionIds);
-        if (excludedConnectionIds.Count > 15 ||
-            excludedConnectionIds.Any(string.IsNullOrWhiteSpace) ||
-            excludedConnectionIds.Distinct(StringComparer.Ordinal).Count() != excludedConnectionIds.Count)
-            throw new ArgumentException("The direct-peer exclusion list is invalid.", nameof(excludedConnectionIds));
-
-        return _connection.SendAsync(
-            "SendAudioPacket",
-            packet,
-            sequence,
-            excludedConnectionIds.ToArray(),
-            cancellationToken);
-    }
-
     public async Task LeaveSessionAsync(CancellationToken cancellationToken = default)
     {
         if (_isDisposed || !IsConnected || string.IsNullOrEmpty(_sessionCode))
@@ -233,7 +197,7 @@ public sealed class SignalRSessionClient : IAsyncDisposable, IPeerKeySignalling
             return;
 
         if (_connection.State != HubConnectionState.Disconnected)
-            throw new InvalidOperationException($"The relay connection is currently {_connection.State}.");
+            throw new InvalidOperationException($"The signalling connection is currently {_connection.State}.");
 
         await _connection.StartAsync(cancellationToken).ConfigureAwait(false);
     }
