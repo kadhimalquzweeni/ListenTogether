@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Windows.Input;
+using ListenTogether.App.Settings;
 
 namespace ListenTogether.App.ViewModels;
 
@@ -10,9 +11,15 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private string _serverUrl = "http://localhost:5000";
     private string _displayName = Environment.UserName;
     private string _statusMessage = "Create a session to share your audio, or join a friend's session.";
+    private readonly UserSettingsStore _settingsStore;
 
-    public MainViewModel()
+    public MainViewModel(UserSettingsStore? settingsStore = null)
     {
+        _settingsStore = settingsStore ?? new UserSettingsStore();
+        var settings = _settingsStore.Load();
+        _serverUrl = settings.ServerUrl;
+        _displayName = settings.DisplayName;
+
         CreateSessionCommand = new RelayCommand(CreateSession);
         JoinSessionCommand = new RelayCommand(JoinSession, () => !string.IsNullOrWhiteSpace(SessionCode));
     }
@@ -51,6 +58,15 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     public ICommand CreateSessionCommand { get; }
     public ICommand JoinSessionCommand { get; }
+
+    public void SaveSettings()
+    {
+        try { _settingsStore.Save(new UserSettings(ServerUrl, DisplayName)); }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            StatusMessage = "Couldn't save settings: " + exception.Message;
+        }
+    }
 
     public Uri? ValidateConnectionSettings()
     {

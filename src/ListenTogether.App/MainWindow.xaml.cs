@@ -13,6 +13,7 @@ public partial class MainWindow : Window
         viewModel.CreateSessionRequested += OnCreateSessionRequested;
         viewModel.JoinSessionRequested += OnJoinSessionRequested;
         DataContext = viewModel;
+        Closing += (_, _) => viewModel.SaveSettings();
     }
 
     private void OnCreateSessionRequested(object? sender, EventArgs e)
