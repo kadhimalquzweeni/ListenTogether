@@ -14,10 +14,12 @@ public sealed class UdpCandidateSet : IDisposable
 {
     private bool _disposed;
 
-    internal UdpCandidateSet(UdpClient socket, IReadOnlyList<PeerCandidate> candidates)
+    public UdpCandidateSet(UdpClient socket, IReadOnlyList<PeerCandidate> candidates)
     {
-        TransportSocket = socket;
-        Candidates = candidates;
+        TransportSocket = socket ?? throw new ArgumentNullException(nameof(socket));
+        Candidates = candidates ?? throw new ArgumentNullException(nameof(candidates));
+        if (Candidates.Count == 0 || Candidates.Any(candidate => candidate is null || !candidate.IsValid))
+            throw new ArgumentException("At least one valid UDP candidate is required.", nameof(candidates));
     }
 
     public UdpClient TransportSocket { get; }
@@ -37,7 +39,7 @@ public sealed class UdpCandidateSet : IDisposable
 /// Binds one reusable UDP socket, gathers active local IPv4 addresses, and
 /// asks the configured STUN endpoint for the socket's public mapped endpoint.
 /// </summary>
-public sealed class UdpCandidateGatherer(StunClient? stunClient = null)
+public sealed class UdpCandidateGatherer(StunClient? stunClient = null) : IUdpCandidateGatherer
 {
     private readonly StunClient _stunClient = stunClient ?? new StunClient();
 
