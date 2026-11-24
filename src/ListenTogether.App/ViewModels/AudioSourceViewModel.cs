@@ -198,7 +198,7 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
                 return;
 
             IsLoading = true;
-            StatusMessage = "Connecting to the listening relay…";
+            StatusMessage = "Connecting to the signalling server…";
 
             try
             {
@@ -214,25 +214,12 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
                 var invitation = await _sessionClient.CreateSessionAsync(_displayName);
                 SessionCode = invitation.Code;
                 await peerNegotiation.BeginPendingPeersAsync();
-                try
-                {
-                    await candidateCoordinator.StartAsync(_serverUri, stunTimeout: TimeSpan.FromSeconds(2));
-                    _udpTransport = new UdpPeerTransportCoordinator(
-                        candidateCoordinator, peerNegotiation, _sessionClient.SessionId);
-                    _udpTransport.PeerConnected += OnDirectPeerConnected;
-                    await _udpTransport.StartAsync();
-                }
-                catch (Exception exception)
-                {
-                    if (_udpTransport is not null)
-                    {
-                        await _udpTransport.DisposeAsync();
-                        _udpTransport = null;
-                    }
-                    candidateCoordinator.Dispose();
-                    _peerCandidates = null;
-                    StatusMessage = $"UDP discovery unavailable; audio will use the SignalR relay. {exception.Message}";
-                }
+                await candidateCoordinator.StartAsync(_serverUri, stunTimeout: TimeSpan.FromSeconds(2));
+                _udpTransport = new UdpPeerTransportCoordinator(candidateCoordinator, peerNegotiation, _sessionClient.SessionId);
+                _udpTransport.PeerConnected += OnDirectPeerConnected;
+                _udpTransport.PeerConnectionAttemptStarted += OnPeerConnectionAttemptStarted;
+                _udpTransport.PeerConnectionFailed += OnPeerConnectionFailed;
+                await _udpTransport.StartAsync();
                 ParticipantCount = 1;
 
                 _encoder = new OpusAudioEncoder();
@@ -263,9 +250,7 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
                     _captureSession.SetGain(item.Source.Id, item.EffectiveGain);
 
                 IsCapturing = true;
-                StatusMessage = _udpTransport is null
-                    ? $"Sharing audio. Invite code: {SessionCode} (relay mode)."
-                    : $"Sharing audio. Invite code: {SessionCode}. Direct UDP is being negotiated; relay fallback is active.";
+                StatusMessage = $"Sharing audio. Invite code: {SessionCode}. Audio is sent only to authenticated direct UDP peers; there is no server relay fallback.";
             }
             catch (Exception exception)
             {
@@ -389,16 +374,10 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
                 if (client is null)
                     break;
 
-                IReadOnlyCollection<string> directRecipients = Array.Empty<string>();
-                var transport = _udpTransport;
-                if (transport is not null)
-                {
-                    directRecipients = await transport.SendAudioToConnectedPeersAsync(
-                        packet.Payload, packet.Sequence, cancellationToken).ConfigureAwait(false);
-                }
-
-                await client.SendAudioPacketAsync(
-                    packet.Payload, packet.Sequence, directRecipients, cancellationToken).ConfigureAwait(false);
+                var transport = _udpTransport
+                    ?? throw new InvalidOperationException("The direct UDP transport is unavailable. Audio was not sent.");
+                await transport.SendAudioToConnectedPeersAsync(
+                    packet.Payload, packet.Sequence, cancellationToken).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -462,8 +441,8 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
         => NotifyOnUi(() =>
         {
             StatusMessage = exception is null
-                ? "Disconnected from the relay."
-                : $"Disconnected from the relay: {exception.Message}";
+                ? "Disconnected from the signalling server."
+                : $"Disconnected from the signalling server: {exception.Message}";
             _ = StopAsync();
         });
 
@@ -471,7 +450,13 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
         => NotifyOnUi(() => StatusMessage = $"A secure peer link has been established with {peerConnectionId}; direct UDP connectivity is being checked.");
 
     private void OnDirectPeerConnected(string peerConnectionId, System.Net.IPEndPoint endpoint)
-        => NotifyOnUi(() => StatusMessage = $"Direct UDP audio connection established with {peerConnectionId}.");
+        => NotifyOnUi(() => StatusMessage = $"Secure direct UDP audio connection established with peer {peerConnectionId}. Audio is flowing directly.");
+
+    private void OnPeerConnectionAttemptStarted(string peerConnectionId)
+        => NotifyOnUi(() => StatusMessage = $"Negotiating direct UDP with listener {peerConnectionId}…");
+
+    private void OnPeerConnectionFailed(string peerConnectionId, string reason)
+        => NotifyOnUi(() => StatusMessage = $"Listener {peerConnectionId} is not reachable over direct UDP. {reason}");
 
     private void OnParticipantJoined(SessionParticipant participant)
         => NotifyOnUi(() =>
@@ -546,6 +531,8 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
         if (_udpTransport is not null)
         {
             _udpTransport.PeerConnected -= OnDirectPeerConnected;
+            _udpTransport.PeerConnectionAttemptStarted -= OnPeerConnectionAttemptStarted;
+            _udpTransport.PeerConnectionFailed -= OnPeerConnectionFailed;
             try { await _udpTransport.DisposeAsync(); }
             catch (Exception exception) { cleanupError ??= exception; }
             _udpTransport = null;
