@@ -89,11 +89,10 @@ public sealed class PeerKeyNegotiationCoordinatorTests
 
         // Listener sends its offer, then its proof can reach the host before the
         // host's own offer is delivered. The host must retain that proof.
-        var originalPublish = hostSignalling.HoldNextOffer;
-        hostSignalling.HoldNextOffer = true;
-        await host.BeginPeerAsync("listener");
+        listenerSignalling.HoldNextOffer = true;
         await listener.BeginPeerAsync("host");
-        hostSignalling.DeliverHeldOffer();
+        await host.BeginPeerAsync("listener");
+        listenerSignalling.DeliverHeldOffer();
 
         await secured.Task.WaitAsync(TimeSpan.FromSeconds(5));
         Assert.Contains("listener", host.SecuredPeers);
@@ -134,9 +133,8 @@ public sealed class PeerKeyNegotiationCoordinatorTests
         using var host = new PeerKeyNegotiationCoordinator(hostSignalling);
         using var listener = new PeerKeyNegotiationCoordinator(listenerSignalling);
 
+        listenerSignalling.HoldNextOffer = true;
         await host.BeginPeerAsync("listener");
-        await listener.BeginPeerAsync("host");
-        await WaitUntilAsync(() => host.GetSecuredResult("listener") is not null);
 
         hostSignalling.RaiseProof(new PeerKeyProofMessage(
             SessionId, "listener", "host", new byte[32], new byte[32]));
@@ -201,11 +199,13 @@ public sealed class PeerKeyNegotiationCoordinatorTests
 
         public event Action<PeerKeyOfferMessage>? PeerKeyOfferReceived;
         public event Action<PeerKeyProofMessage>? PeerKeyProofReceived;
+#pragma warning disable CS0067
         public event Action<SessionParticipant>? ParticipantJoined;
         public event Action<SessionParticipant>? ParticipantLeft;
         public event Action<SessionJoinResult>? SessionJoined;
         public event Action<string>? SessionEnded;
         public event Action<Exception?>? ConnectionClosed;
+#pragma warning restore CS0067
 
         public Task PublishPeerKeyOfferAsync(PeerKeyOffer offer, CancellationToken cancellationToken = default)
         {
