@@ -198,6 +198,13 @@ public sealed class PeerKeyNegotiationCoordinatorTests
             return peer;
         }
 
+        public Task SendCandidateAsync(string from, PeerCandidate candidate)
+        {
+            foreach (var recipient in _peers.Values.Where(peer => peer.ConnectionId != from))
+                recipient.RaiseCandidate(new PeerCandidateMessage(from, candidate));
+            return Task.CompletedTask;
+        }
+
         public Task SendOfferAsync(PeerKeyOffer offer)
         {
             if (!_peers.TryGetValue(offer.ToConnectionId, out var recipient))
@@ -229,6 +236,7 @@ public sealed class PeerKeyNegotiationCoordinatorTests
         public bool HoldNextOffer { get; set; }
         public bool HoldNextProof { get; set; }
 
+        public event Action<PeerCandidateMessage>? PeerCandidateReceived;
         public event Action<PeerKeyOfferMessage>? PeerKeyOfferReceived;
         public event Action<PeerKeyProofMessage>? PeerKeyProofReceived;
 #pragma warning disable CS0067
@@ -238,6 +246,12 @@ public sealed class PeerKeyNegotiationCoordinatorTests
         public event Action<string>? SessionEnded;
         public event Action<Exception?>? ConnectionClosed;
 #pragma warning restore CS0067
+
+        public Task PublishPeerCandidateAsync(PeerCandidate candidate, CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return network.SendCandidateAsync(connectionId, candidate);
+        }
 
         public Task PublishPeerKeyOfferAsync(PeerKeyOffer offer, CancellationToken cancellationToken = default)
         {
@@ -284,6 +298,7 @@ public sealed class PeerKeyNegotiationCoordinatorTests
             _ = network.SendProofAsync(connectionId, held.To, held.Hash, held.Proof);
         }
 
+        public void RaiseCandidate(PeerCandidateMessage message) => PeerCandidateReceived?.Invoke(message);
         public void RaiseOffer(PeerKeyOfferMessage message) => PeerKeyOfferReceived?.Invoke(message);
         public void RaiseProof(PeerKeyProofMessage message) => PeerKeyProofReceived?.Invoke(message);
         public void RaiseParticipantLeft(SessionParticipant participant) => ParticipantLeft?.Invoke(participant);
