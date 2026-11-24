@@ -121,6 +121,7 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
     public int SelectedApplicationCount => ApplicationSources.Count(source => source.IsSelected);
     public int AvailableApplicationCount => ApplicationSources.Count;
     public bool CanStart => !IsLoading && !IsCapturing;
+    public bool CanEditSources => !IsLoading && !IsCapturing;
 
     public ICommand RefreshCommand { get; }
     public ICommand StartCommand { get; }

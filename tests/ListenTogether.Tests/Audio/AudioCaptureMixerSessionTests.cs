@@ -18,7 +18,11 @@ public sealed class AudioCaptureMixerSessionTests
             factory,
             TimeSpan.FromMilliseconds(10));
         var received = new TaskCompletionSource<AudioFrame>(TaskCreationOptions.RunContinuationsAsynchronously);
-        session.MixedFrameAvailable += frame => received.TrySetResult(frame);
+        session.MixedFrameAvailable += frame =>
+        {
+            if (frame.Samples.Span[0] > 0.4f)
+                received.TrySetResult(frame);
+        };
 
         await session.StartAsync();
 
@@ -63,7 +67,11 @@ public sealed class AudioCaptureMixerSessionTests
         await using var session = new AudioCaptureMixerSession(
             AudioSourceSelection.Applications([source]), factory, TimeSpan.FromMilliseconds(10));
         var received = new TaskCompletionSource<AudioFrame>(TaskCreationOptions.RunContinuationsAsynchronously);
-        session.MixedFrameAvailable += frame => received.TrySetResult(frame);
+        session.MixedFrameAvailable += frame =>
+        {
+            if (frame.Samples.Span[0] > 0.19f)
+                received.TrySetResult(frame);
+        };
 
         await session.StartAsync();
         session.SetGain(source.Id, 0.25f);

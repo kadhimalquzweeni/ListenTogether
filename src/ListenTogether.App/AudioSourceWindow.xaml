@@ -155,7 +155,7 @@
             </Grid.ColumnDefinitions>
             <RadioButton Grid.Column="0" GroupName="SourceMode" Style="{StaticResource ModeRadio}"
                          Content="All system audio" Tag="Everything played through your default output device."
-                         IsChecked="{Binding IsSystemAudioMode}" IsEnabled="{Binding IsCapturing, Converter={StaticResource InverseBooleanConverter}}" />
+                         IsChecked="{Binding IsSystemAudioMode}" IsEnabled="{Binding CanEditSources}" />
             <RadioButton Grid.Column="2" GroupName="SourceMode" Style="{StaticResource ModeRadio}"
                          Content="Selected applications" Tag="Choose multiple apps and control each one separately."
                          IsChecked="{Binding IsSystemAudioMode, Converter={StaticResource InverseBooleanConverter}}" IsEnabled="{Binding IsCapturing, Converter={StaticResource InverseBooleanConverter}}" />
@@ -225,7 +225,7 @@
                                                 </Grid.ColumnDefinitions>
                                                 <CheckBox Grid.Column="0" Style="{StaticResource SourceCheckBox}"
                                                           IsChecked="{Binding IsSelected}"
-                                                          IsEnabled="{Binding DataContext.IsCapturing, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource InverseBooleanConverter}}" />
+                                                          IsEnabled="{Binding DataContext.CanEditSources, RelativeSource={RelativeSource AncestorType=Window}}" />
                                                 <StackPanel Grid.Column="1" VerticalAlignment="Center">
                                                     <TextBlock Text="{Binding DisplayName}" FontSize="13" FontWeight="SemiBold"
                                                                TextTrimming="CharacterEllipsis" />
@@ -266,7 +266,7 @@
                            TextWrapping="Wrap" MaxWidth="480" />
                 <TextBlock Text="{Binding OutputLevel, StringFormat=Output level  •  {0:0}%}"
                            FontSize="10" Foreground="#7F8AA2" Margin="0,5,0,0" />
-                <TextBlock Text="{Binding SessionCode, StringFormat=Invite code: {0}}" FontSize="12"
+                <TextBlock Text="{Binding SessionCode, StringFormat={}Invite code: {0}}" FontSize="12"
                            Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" Margin="0,5,0,0" />
             </StackPanel>
             <Button Grid.Column="1" Content="Stop capture" Command="{Binding StopCommand}"

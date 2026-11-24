@@ -26,7 +26,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         get => _sessionCode;
         set
         {
-            if (SetProperty(ref _sessionCode, value.Trim().ToUpperInvariant()))
+            if (SetProperty(ref _sessionCode, value?.Trim().ToUpperInvariant() ?? string.Empty))
                 (JoinSessionCommand as RelayCommand)?.RaiseCanExecuteChanged();
         }
     }
