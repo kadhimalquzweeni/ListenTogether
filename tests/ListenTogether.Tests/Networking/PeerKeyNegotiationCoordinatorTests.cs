@@ -74,6 +74,31 @@ public sealed class PeerKeyNegotiationCoordinatorTests
     }
 
     [Fact]
+    public async Task ParticipantJoiningBeforeHostIdentityReady_IsRetriedAfterSessionCreation()
+    {
+        var network = new InMemoryPeerNetwork(SessionId);
+        var hostSignalling = network.AddPeer("host", Guid.Empty);
+        var listenerSignalling = network.AddPeer("listener");
+        using var host = new PeerKeyNegotiationCoordinator(hostSignalling);
+        using var listener = new PeerKeyNegotiationCoordinator(listenerSignalling);
+        var secured = new CountdownEvent(2);
+
+        host.PeerSecured += (_, _) => secured.Signal();
+        listener.PeerSecured += (_, _) => secured.Signal();
+
+        hostSignalling.RaiseParticipantJoined(new SessionParticipant("Listener", false, "listener"));
+        hostSignalling.SetSessionIdentity(SessionId, "host");
+
+        await Task.WhenAll(
+            host.BeginPendingPeersAsync(),
+            listener.BeginPeerAsync("host"));
+
+        Assert.True(secured.Wait(TimeSpan.FromSeconds(5)));
+        Assert.Contains("listener", host.SecuredPeers);
+        Assert.Contains("host", listener.SecuredPeers);
+    }
+
+    [Fact]
     public async Task BeginPeersAsync_EachListenerGetsIndependentHostKeys()
     {
         var network = new InMemoryPeerNetwork(SessionId);
@@ -191,9 +216,9 @@ public sealed class PeerKeyNegotiationCoordinatorTests
     {
         private readonly Dictionary<string, FakePeerSignalling> _peers = new(StringComparer.Ordinal);
 
-        public FakePeerSignalling AddPeer(string connectionId)
+        public FakePeerSignalling AddPeer(string connectionId, Guid? identitySessionId = null)
         {
-            var peer = new FakePeerSignalling(this, sessionId, connectionId);
+            var peer = new FakePeerSignalling(this, identitySessionId ?? sessionId, connectionId);
             _peers.Add(connectionId, peer);
             return peer;
         }
@@ -228,11 +253,13 @@ public sealed class PeerKeyNegotiationCoordinatorTests
         Guid sessionId,
         string connectionId) : IPeerKeySignalling
     {
+        private Guid _sessionId = sessionId;
+        private string? _connectionId = connectionId;
         private PeerKeyOffer? _heldOffer;
         private (string To, byte[] Hash, byte[] Proof)? _heldProof;
 
-        public Guid SessionId => sessionId;
-        public string? ConnectionId => connectionId;
+        public Guid SessionId => _sessionId;
+        public string? ConnectionId => _connectionId;
         public bool HoldNextOffer { get; set; }
         public bool HoldNextProof { get; set; }
         public TaskCompletionSource ProofPublished { get; } =
@@ -300,6 +327,9 @@ public sealed class PeerKeyNegotiationCoordinatorTests
             _heldProof = null;
             _ = network.SendProofAsync(connectionId, held.To, held.Hash, held.Proof);
         }
+
+        public void SetSessionIdentity(Guid id, string connection) =>
+            (_sessionId, _connectionId) = (id, connection);
 
         public void RaiseCandidate(PeerCandidateMessage message) => PeerCandidateReceived?.Invoke(message);
         public void RaiseOffer(PeerKeyOfferMessage message) => PeerKeyOfferReceived?.Invoke(message);
