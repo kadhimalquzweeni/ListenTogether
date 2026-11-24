@@ -5,9 +5,9 @@ ListenTogether uses a signalling service to coordinate sessions and attempts a d
 ## Connection establishment
 
 1. The desktop client connects to the ASP.NET Core SignalR signalling endpoint over TLS.
-2. A participant gathers local UDP host candidates and a server-reflexive candidate using STUN on the same UDP socket that will later carry media.
-3. Candidates are exchanged through the session signalling channel.
-4. Both peers will send connectivity checks to the other peer's candidates concurrently (UDP hole punching). The selected socket must remain alive for the duration of the session.
+2. A participant gathers local IPv4 UDP host candidates and a server-reflexive candidate using the configured signalling host on UDP port 3478. STUN uses the same UDP socket that is retained for subsequent connectivity checks and media.
+3. Candidates are exchanged through the session signalling channel. Existing participants republish their candidates when a new participant joins, so late joiners receive candidates from everyone.
+4. Both peers still need to send authenticated connectivity checks to the other peer's candidates concurrently (UDP hole punching). That check/selection stage is not implemented yet. The selected socket must remain alive for the duration of the session.
 5. If direct connectivity cannot be established, a publicly reachable UDP relay is required. STUN does not relay traffic and cannot make a private home server reachable through NAT.
 
 ## Protected UDP datagrams
@@ -34,3 +34,10 @@ A self-hosted STUN/signalling/relay service must be reachable from the public in
 `PeerKeyNegotiationCoordinator` maintains a separate ECDH agreement for every remote SignalR connection. It starts negotiation with existing peers on `SessionJoined`, and with later arrivals on `ParticipantJoined`. Each peer is considered secured only after the transcript hash and HMAC key-confirmation proof both verify. Proofs arriving before local offer processing are held until the agreement is ready, including the case where the proof datagram/message overtakes the remote offer on the signalling path. Peer key material is disposed and zeroed when that participant leaves, the session ends, the signalling connection closes, or the coordinator is disposed. Subscriber exceptions are isolated from protocol processing. Consumers must keep the coordinator alive for the session and must not dispose a secured result while its key material is in use.
 
 The coordinator uses the `IPeerKeySignalling` abstraction. Automated tests exercise simultaneous offers, automatic session/participant event startup, proof-before-offer delivery, multiple independent listener keys, and participant departure cleanup.
+
+
+### UDP candidate gathering and exchange
+
+`UdpCandidateGatherer` binds one IPv4 UDP socket, gathers active local interface addresses, and asks the configured STUN endpoint for its server-reflexive mapping. `UdpPeerCandidateCoordinator` owns that candidate set for the session, publishes each candidate through SignalR, tracks remote candidates by server-assigned peer connection ID, deduplicates repeats, and republishes local candidates when another participant joins. The host and listener view models start this process after session creation/join and dispose the retained socket during teardown.
+
+Candidate discovery is optional: if DNS/STUN discovery fails or times out, session setup continues using the existing SignalR audio relay. Candidate exchange is not yet a direct media connection; no UDP connectivity checks or UDP audio frames are sent at this stage. The current STUN implementation and gatherer are IPv4-only.
