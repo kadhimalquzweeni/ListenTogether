@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using System.Security.Cryptography;
 using System.Text;
+using ListenTogether.Core.Sessions;
 
 namespace ListenTogether.Infrastructure.Networking;
 
@@ -180,13 +181,6 @@ public sealed class PeerKeyAgreement : IDisposable
         CryptographicOperations.ZeroMemory(_localNonce);
     }
 }
-
-public sealed record PeerKeyOffer(
-    Guid SessionId,
-    string FromConnectionId,
-    string ToConnectionId,
-    byte[] PublicKey,
-    byte[] Nonce);
 
 /// <summary>
 /// Holds directional key material. Call VerifyPeerProof before constructing
