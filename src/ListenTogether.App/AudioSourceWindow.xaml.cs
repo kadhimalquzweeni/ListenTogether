@@ -8,13 +8,13 @@ public partial class AudioSourceWindow : Window
 {
     private readonly AudioSourceViewModel _viewModel;
 
-    public AudioSourceWindow()
+    public AudioSourceWindow(Uri serverUri, string displayName)
     {
         InitializeComponent();
 
         _viewModel = new AudioSourceViewModel(
             new WindowsAudioSourceDiscovery(),
-            new WasapiAudioCaptureFactory());
+            new WasapiAudioCaptureFactory(),\n            serverUri,\n            displayName);
 
         DataContext = _viewModel;
         Loaded += OnLoaded;

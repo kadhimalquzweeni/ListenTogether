@@ -258,16 +258,20 @@
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="12" />
                 <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="12" />
+                <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
             <StackPanel VerticalAlignment="Center">
                 <TextBlock Text="{Binding StatusMessage}" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"
                            TextWrapping="Wrap" MaxWidth="480" />
                 <TextBlock Text="{Binding OutputLevel, StringFormat=Output level  •  {0:0}%}"
                            FontSize="10" Foreground="#7F8AA2" Margin="0,5,0,0" />
+                <TextBlock Text="{Binding SessionCode, StringFormat=Invite code: {0}}" FontSize="12"
+                           Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" Margin="0,5,0,0" />
             </StackPanel>
             <Button Grid.Column="1" Content="Stop capture" Command="{Binding StopCommand}"
                     Style="{StaticResource SecondaryButton}" IsEnabled="{Binding IsCapturing}" />
-            <Button Grid.Column="3" Content="Start capture" Command="{Binding StartCommand}"
+            <Button Grid.Column="5" Content="Start sharing" Command="{Binding StartCommand}"
                     Style="{StaticResource PrimaryButton}" IsEnabled="{Binding CanStart}" />
         </Grid>
     </Grid>
