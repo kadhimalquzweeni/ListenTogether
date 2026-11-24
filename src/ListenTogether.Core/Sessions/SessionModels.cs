@@ -9,7 +9,7 @@ public enum SessionRole
 /// <summary>A session invitation carries the stable identifier used by peer key agreement.</summary>
 public sealed record SessionInvitation(string Code, Uri? JoinUri = null, Guid SessionId = default);
 
-public sealed record SessionParticipant(string DisplayName, bool IsHost);
+public sealed record SessionParticipant(string DisplayName, bool IsHost, string? ConnectionId = null);
 
 public sealed record SessionJoinResult(
     SessionInvitation Invitation,
