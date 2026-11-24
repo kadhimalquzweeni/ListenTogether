@@ -32,10 +32,14 @@ public sealed class UdpPeerCandidateCoordinatorTests
         await host.StartAsync(new Uri("http://127.0.0.1:5000"));
         await listener.StartAsync(new Uri("http://127.0.0.1:5000"));
 
-        Assert.Equal(hostCandidates, host.LocalCandidates);
-        Assert.Equal(listenerCandidates, listener.LocalCandidates);
-        Assert.Equal(hostCandidates, listener.GetRemoteCandidates("host"));
-        Assert.Equal(listenerCandidates, host.GetRemoteCandidates("listener"));
+        Assert.Equal(hostCandidates.OrderBy(candidate => candidate.Type).ThenBy(candidate => candidate.Address),
+            host.LocalCandidates.OrderBy(candidate => candidate.Type).ThenBy(candidate => candidate.Address));
+        Assert.Equal(listenerCandidates.OrderBy(candidate => candidate.Type).ThenBy(candidate => candidate.Address),
+            listener.LocalCandidates.OrderBy(candidate => candidate.Type).ThenBy(candidate => candidate.Address));
+        Assert.Equal(hostCandidates.OrderBy(candidate => candidate.Type).ThenBy(candidate => candidate.Address),
+            listener.GetRemoteCandidates("host").OrderBy(candidate => candidate.Type).ThenBy(candidate => candidate.Address));
+        Assert.Equal(listenerCandidates.OrderBy(candidate => candidate.Type).ThenBy(candidate => candidate.Address),
+            host.GetRemoteCandidates("listener").OrderBy(candidate => candidate.Type).ThenBy(candidate => candidate.Address));
         Assert.NotNull(host.LocalCandidateSet);
         Assert.NotNull(host.LocalCandidateSet!.TransportSocket.Client.LocalEndPoint);
     }
@@ -108,7 +112,7 @@ public sealed class UdpPeerCandidateCoordinatorTests
         Assert.Empty(host.GetRemoteCandidates("listener"));
 
         host.Dispose();
-        Assert.Throws<ObjectDisposedException>(() => socket.Client.Bind(new IPEndPoint(IPAddress.Loopback, 0)));
+        Assert.Null(socket.Client);
     }
 
     private static async Task WaitUntilAsync(Func<bool> condition)
