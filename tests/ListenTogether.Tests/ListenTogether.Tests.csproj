@@ -16,6 +16,6 @@
     </PackageReference>
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\src\ListenTogether.Core\ListenTogether.Core.csproj" />
+    <ProjectReference Include="..\..\src\ListenTogether.Core\ListenTogether.Core.csproj" />\n    <ProjectReference Include="..\..\src\ListenTogether.Infrastructure\ListenTogether.Infrastructure.csproj" />
   </ItemGroup>
 </Project>
