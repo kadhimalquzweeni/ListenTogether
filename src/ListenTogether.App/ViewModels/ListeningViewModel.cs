@@ -11,6 +11,7 @@ namespace ListenTogether.App.ViewModels;
 public sealed class ListeningViewModel : INotifyPropertyChanged, IAsyncDisposable
 {
     private readonly SignalRSessionClient _client;
+    private readonly PeerKeyNegotiationCoordinator _peerNegotiation;
     private readonly OpusAudioDecoder _decoder = new();
     private WasapiAudioPlayback? _playback;
     private int _isDisposed;
@@ -27,6 +28,8 @@ public sealed class ListeningViewModel : INotifyPropertyChanged, IAsyncDisposabl
     {
         _sessionCode = sessionCode;
         _client = new SignalRSessionClient(serverUri);
+        _peerNegotiation = new PeerKeyNegotiationCoordinator(_client);
+        _peerNegotiation.PeerSecured += OnPeerSecured;
         _client.AudioPacketReceived += OnAudioPacketReceived;
         _client.ParticipantJoined += OnParticipantJoined;
         _client.ParticipantLeft += OnParticipantLeft;
@@ -147,6 +150,7 @@ public sealed class ListeningViewModel : INotifyPropertyChanged, IAsyncDisposabl
         StatusMessage = "Leaving session…";
         IsConnected = false;
 
+        _peerNegotiation.Dispose();
         try { await _client.LeaveSessionAsync(); }
         catch (Exception exception) { StatusMessage = $"Couldn't leave cleanly: {exception.Message}"; }
 
@@ -164,6 +168,7 @@ public sealed class ListeningViewModel : INotifyPropertyChanged, IAsyncDisposabl
         try
         {
             _client.AudioPacketReceived -= OnAudioPacketReceived;
+            _peerNegotiation.PeerSecured -= OnPeerSecured;
             _client.ParticipantJoined -= OnParticipantJoined;
             _client.ParticipantLeft -= OnParticipantLeft;
             _client.SessionEnded -= OnSessionEnded;
@@ -180,6 +185,7 @@ public sealed class ListeningViewModel : INotifyPropertyChanged, IAsyncDisposabl
                 await _playback.DisposeAsync();
                 _playback = null;
             }
+            _peerNegotiation.Dispose();
             await _client.DisposeAsync();
         }
         finally
@@ -188,6 +194,9 @@ public sealed class ListeningViewModel : INotifyPropertyChanged, IAsyncDisposabl
             _lifecycle.Dispose();
         }
     }
+
+    private void OnPeerSecured(string peerConnectionId, PeerKeyAgreementResult result)
+        => NotifyOnUi(() => StatusMessage = $"A secure peer link has been established with {HostDisplayName}. Audio is still using the relay.");
 
     private void OnAudioPacketReceived(byte[] packet, long sequence)
     {
