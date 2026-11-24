@@ -74,6 +74,54 @@ public sealed class UdpPeerTransportCoordinatorTests
     }
 
     [Fact]
+    public async Task HostSendsEncryptedAudioDirectlyToMultipleListeners()
+    {
+        var network = new FakeNetwork(SessionId);
+        var hostSignalling = network.AddPeer("host");
+        var firstSignalling = network.AddPeer("listener-one");
+        var secondSignalling = network.AddPeer("listener-two");
+        using var hostCandidates = new UdpPeerCandidateCoordinator(hostSignalling, new LoopbackCandidateGatherer());
+        using var firstCandidates = new UdpPeerCandidateCoordinator(firstSignalling, new LoopbackCandidateGatherer());
+        using var secondCandidates = new UdpPeerCandidateCoordinator(secondSignalling, new LoopbackCandidateGatherer());
+        using var hostKeys = new PeerKeyNegotiationCoordinator(hostSignalling);
+        using var firstKeys = new PeerKeyNegotiationCoordinator(firstSignalling);
+        using var secondKeys = new PeerKeyNegotiationCoordinator(secondSignalling);
+        await Task.WhenAll(
+            hostCandidates.StartAsync(new Uri("http://127.0.0.1:5000")),
+            firstCandidates.StartAsync(new Uri("http://127.0.0.1:5000")),
+            secondCandidates.StartAsync(new Uri("http://127.0.0.1:5000")));
+
+        var secured = new CountdownEvent(4);
+        hostKeys.PeerSecured += (_, _) => secured.Signal();
+        firstKeys.PeerSecured += (_, _) => secured.Signal();
+        secondKeys.PeerSecured += (_, _) => secured.Signal();
+        await Task.WhenAll(
+            hostKeys.BeginPeerAsync("listener-one"),
+            hostKeys.BeginPeerAsync("listener-two"),
+            firstKeys.BeginPeerAsync("host"),
+            secondKeys.BeginPeerAsync("host"));
+        Assert.True(secured.Wait(TimeSpan.FromSeconds(5)));
+
+        await using var hostTransport = new UdpPeerTransportCoordinator(hostCandidates, hostKeys, SessionId);
+        await using var firstTransport = new UdpPeerTransportCoordinator(firstCandidates, firstKeys, SessionId);
+        await using var secondTransport = new UdpPeerTransportCoordinator(secondCandidates, secondKeys, SessionId);
+        var connected = new CountdownEvent(2);
+        var firstAudio = new TaskCompletionSource<byte[]>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var secondAudio = new TaskCompletionSource<byte[]>(TaskCreationOptions.RunContinuationsAsynchronously);
+        hostTransport.PeerConnected += (_, _) => connected.Signal();
+        firstTransport.AudioPacketReceived += (_, payload, _) => firstAudio.TrySetResult(payload);
+        secondTransport.AudioPacketReceived += (_, payload, _) => secondAudio.TrySetResult(payload);
+        await Task.WhenAll(hostTransport.StartAsync(), firstTransport.StartAsync(), secondTransport.StartAsync());
+        Assert.True(connected.Wait(TimeSpan.FromSeconds(5)));
+
+        var payload = new byte[] { 0xF8, 0xFF, 0xFE, 0x01 };
+        var sent = await hostTransport.SendAudioToConnectedPeersAsync(payload, 7);
+        Assert.Contains("listener-one", sent);
+        Assert.Contains("listener-two", sent);
+        Assert.Equal(payload, await firstAudio.Task.WaitAsync(TimeSpan.FromSeconds(5)));
+        Assert.Equal(payload, await secondAudio.Task.WaitAsync(TimeSpan.FromSeconds(5)));
+    }
+    [Fact]
     public async Task MissingCandidate_IsReportedAndConnectivityRetriesWhenCandidateArrives()
     {
         var network = new FakeNetwork(SessionId);
