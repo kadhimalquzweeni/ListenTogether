@@ -9,8 +9,7 @@ namespace ListenTogether.Infrastructure.Networking;
 
 /// <summary>
 /// Establishes authenticated UDP paths to secured session peers and carries
-/// encrypted Opus frames over those paths. SignalR remains the fallback for
-/// participants that have not established a direct route.
+/// encrypted Opus frames over those paths. SignalR is used only for signalling.
 /// </summary>
 public sealed class UdpPeerTransportCoordinator : IAsyncDisposable
 {
@@ -46,6 +45,12 @@ public sealed class UdpPeerTransportCoordinator : IAsyncDisposable
     /// <summary>Raised when an authenticated UDP path is established or re-established.</summary>
     public event Action<string, IPEndPoint>? PeerConnected;
 
+    /// <summary>Raised when a peer's direct UDP connectivity checks begin or retry.</summary>
+    public event Action<string>? PeerConnectionAttemptStarted;
+
+    /// <summary>Raised when a connectivity-check round cannot establish an authenticated path.</summary>
+    public event Action<string, string>? PeerConnectionFailed;
+
     /// <summary>Raised for authenticated Opus frames received directly from a peer.</summary>
     public event Action<string, byte[], ulong>? AudioPacketReceived;
 
@@ -76,9 +81,8 @@ public sealed class UdpPeerTransportCoordinator : IAsyncDisposable
     }
 
     /// <summary>
-    /// Sends one encoded Opus frame to currently connected peers and returns
-    /// the peer connection IDs that were sent successfully. Callers should
-    /// relay the frame to all remaining participants through SignalR.
+    /// Sends one encoded Opus frame only to currently connected direct peers.
+    /// Frames are dropped for peers without an authenticated UDP path; there is no relay fallback.
     /// </summary>
     public async Task<IReadOnlyCollection<string>> SendAudioToConnectedPeersAsync(
         ReadOnlyMemory<byte> opusPayload,
@@ -182,6 +186,7 @@ public sealed class UdpPeerTransportCoordinator : IAsyncDisposable
             !state.TryStartChecks())
             return;
 
+        RaisePeerConnectionAttemptStarted(peerId);
         _ = RunConnectivityChecksAsync(peerId, state, _cancellation.Token);
     }
 
@@ -204,7 +209,10 @@ public sealed class UdpPeerTransportCoordinator : IAsyncDisposable
 
                 var candidates = _candidates.GetRemoteCandidates(peerId);
                 if (candidates.Count == 0)
+                {
+                    RaisePeerConnectionFailed(peerId, "No remote UDP candidates have arrived yet. Waiting for candidate exchange and retrying automatically.");
                     return;
+                }
 
                 var datagram = state.CreatePacket(
                     _sessionId,
@@ -230,6 +238,9 @@ public sealed class UdpPeerTransportCoordinator : IAsyncDisposable
 
                 await Task.Delay(250, cancellationToken).ConfigureAwait(false);
             }
+
+            if (state.GetActiveEndpoint(PeerTimeout) is null)
+                RaisePeerConnectionFailed(peerId, "No authenticated UDP response was received from the peer's candidates. Check NAT/firewall restrictions; ListenTogether will retry automatically.");
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -434,6 +445,25 @@ public sealed class UdpPeerTransportCoordinator : IAsyncDisposable
         }
     }
 
+    private void RaisePeerConnectionAttemptStarted(string peerId)
+    {
+        var handlers = PeerConnectionAttemptStarted;
+        if (handlers is null) return;
+        foreach (Action<string> handler in handlers.GetInvocationList())
+        {
+            try { handler(peerId); } catch (Exception) { }
+        }
+    }
+
+    private void RaisePeerConnectionFailed(string peerId, string reason)
+    {
+        var handlers = PeerConnectionFailed;
+        if (handlers is null) return;
+        foreach (Action<string, string> handler in handlers.GetInvocationList())
+        {
+            try { handler(peerId, reason); } catch (Exception) { }
+        }
+    }
     private void ThrowIfDisposed() =>
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) == 1, this);
 
