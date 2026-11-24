@@ -1,10 +1,10 @@
-# Relay deployment
+# Signalling and STUN deployment
 
-The desktop clients connect to a ListenTogether SignalR relay at:
+The desktop clients connect to the ListenTogether SignalR signalling service at:
 
 `https://your-domain.example/hubs/listening`
 
-The relay forwards small Opus packets to the listeners in a session. It does not persist audio. The current server uses in-memory session state and is designed to run as a single instance.
+The server handles session signalling, candidate exchange and peer-key negotiation only. It does not receive, forward or persist audio packets. The current server uses in-memory session state and is designed to run as a single instance.
 
 ## Local Docker
 
@@ -20,8 +20,8 @@ The server listens on `http://localhost:5000` and publishes the STUN endpoint on
 
 1. Find the host PC's LAN IPv4 address.
 2. Allow inbound TCP port 5000 and UDP port 3478 in Windows Firewall.
-3. Start the relay with Docker Compose.
-4. Set the relay URL on both desktops to `http://HOST-LAN-IP:5000`.
+3. Start the signalling and STUN services with Docker Compose.
+4. Set the server address on both desktops to `http://HOST-LAN-IP:5000`.
 5. Create a session on one desktop and join from the other. The clients exchange UDP candidates and attempt a direct encrypted audio path. If that path cannot be established, audio continues through SignalR.
 
 Use HTTP only on a trusted local network. Do not expose this endpoint directly to the public internet.
@@ -48,13 +48,13 @@ The Caddy reverse proxy must support WebSocket upgrades. Caddy's `reverse_proxy`
 
 ## Capacity and security notes
 
-- The relay currently supports 16 participants per session, including the host.
+- The signalling service supports 16 participants per session, including the host.
 - The server accepts Opus packets up to 1,275 bytes and limits the host packet cadence.
 - Session codes are random eight-character bearer credentials. Anyone with a code can join that session.
 - Session state is held in process memory. A restart or deployment replacement ends all sessions.
 - Run a single relay instance. The current in-memory registry is not shared between replicas.
 - Use HTTPS/WSS for internet traffic. Do not publish the container's plain HTTP port directly to the internet.
-- The relay does not record audio, but it necessarily handles the live audio packets while forwarding them.
+- The signalling server never handles live audio packets; media travels directly between peers over encrypted UDP.
 - At the default Opus bitrate, estimate approximately 128 kbit/s of host upload per listener, plus protocol overhead and server egress.
 
 For production use, put the relay behind a firewall and trusted TLS reverse proxy. Keep the Docker container's port private to the proxy.
@@ -63,6 +63,6 @@ For production use, put the relay behind a firewall and trusted TLS reverse prox
 ## Direct UDP and reachability
 
 - Clients only need outbound access to the signalling HTTPS endpoint and UDP STUN port 3478. They do not need inbound router rules or port forwarding.
-- The STUN service must be reachable from the public internet for server-reflexive candidates to work. The direct UDP path is attempted between peers; some NAT combinations (especially symmetric or restrictive NATs) may prevent it. Those listeners use the SignalR audio relay instead.
-- The signalling/relay server itself must have a public endpoint. Running Docker Compose on a home PC behind a router does not make that server reachable from the internet. Without router forwarding or a tunnel/public hosting endpoint, only same-LAN clients can reach it.
+- The STUN service must be reachable from the public internet for server-reflexive candidates to work. The direct UDP path is attempted between peers; some NAT combinations (especially symmetric or restrictive NATs) may prevent it. Those listeners do not receive audio. The app reports the failure and retries direct connectivity checks.
+- The signalling server itself must have a public endpoint. Running Docker Compose on a home PC behind a router does not make that server reachable from the internet. Without router forwarding or a tunnel/public hosting endpoint, only same-LAN clients can reach it.
 - The included production Compose file uses Caddy with a DNS name for managed HTTPS. A domain-free public TLS setup is not currently automated; do not expose the development HTTP endpoint to the public internet.
