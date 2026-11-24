@@ -9,7 +9,7 @@ This guide runs the signalling service and self-hosted STUN service on a Windows
 - Windows 10/11 x64.
 - .NET 10 SDK to publish locally, or the Windows x64 server artifact from GitHub Actions.
 - Caddy for Windows (official Caddy executable).
-- A DNS name whose A record points to your home's public IPv4 address. Dynamic DNS is recommended if your ISP changes that address.
+- A free DuckDNS hostname (for example, `yourname.duckdns.org`) configured with the scripts below.
 - Router administrator access and a public IPv4 address. If your router's WAN IPv4 differs from the public IPv4 reported by an IP-check website, your ISP may use CGNAT; ordinary port forwarding will not work through CGNAT.
 - A static/reserved LAN IPv4 address for the server PC.
 
@@ -23,7 +23,23 @@ The server defaults to loopback HTTP on 127.0.0.1:5000, while STUN binds to 0.0.
 
 ## 2. Configure DNS and router forwarding
 
-Create an A record for your chosen hostname pointing to your public IPv4 address. If your address changes, configure your dynamic DNS updater to keep the record current.
+### Free hostname with DuckDNS
+
+1. Create a free account at [DuckDNS](https://www.duckdns.org/).
+2. Sign in and choose an available subdomain, for example `listentogether-home.duckdns.org`.
+3. Copy your DuckDNS account token. Do not share it or commit it to GitHub.
+4. From the repository root, run this in PowerShell:
+
+       .\scripts\home-server\Configure-DuckDns.ps1 -Subdomain "your-subdomain"
+
+   Paste the token when prompted. It is stored encrypted using Windows DPAPI for your current Windows account.
+5. Start the updater in a separate PowerShell window and leave it running:
+
+       .\scripts\home-server\Update-DuckDns.ps1
+
+   It updates the public IPv4 record every five minutes. To test a single update, use `-Once`.
+
+The hostname will be `your-subdomain.duckdns.org`. DuckDNS updates the address to your current public IPv4; it does not bypass CGNAT or make an unreachable router reachable.
 
 Reserve a fixed LAN address for the server PC in your router. Forward these ports to that LAN address:
 
@@ -47,20 +63,20 @@ This creates inbound rules for TCP 80/443 and UDP 3478. It does not configure th
 
 Install Caddy and ensure caddy.exe is on PATH. From the repository root, run PowerShell as Administrator:
 
-    .\scripts\home-server\Start-Server.ps1 -Domain "listen.yourdomain.example" -AcmeEmail "you@example.com"
+    .\scripts\home-server\Start-Server.ps1 -Domain "your-subdomain.duckdns.org" -AcmeEmail "you@example.com"
 
 Or pass -CaddyExe with the full path to caddy.exe. Keep the PowerShell window open. The script starts the published server, checks its local health endpoint, and starts Caddy. Caddy needs working public DNS and inbound TCP 80/443 to obtain its certificate.
 
 Check locally:
 - http://127.0.0.1:5000/healthz should return healthy.
-- https://listen.yourdomain.example/healthz should return healthy after Caddy obtains its certificate.
-- Set the desktop app's signalling server URL to https://listen.yourdomain.example.
+- https://your-subdomain.duckdns.org/healthz should return healthy after Caddy obtains its certificate.
+- Set the desktop app's signalling server URL to https://your-subdomain.duckdns.org.
 
 ## 5. Test STUN from outside your home network
 
 Run this from a second PC connected to a different network (for example, a laptop on a mobile hotspot), with the repository script available:
 
-    .\scripts\home-server\Test-Stun.ps1 -Server "listen.yourdomain.example"
+    .\scripts\home-server\Test-Stun.ps1 -Server "your-subdomain.duckdns.org"
 
 A successful result prints the public UDP IP:port mapping observed by STUN. Running this test from inside the same home network may fail if the router does not support NAT loopback; that does not by itself mean external access is broken.
 
