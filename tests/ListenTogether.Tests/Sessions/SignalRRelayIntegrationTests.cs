@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
@@ -70,7 +71,7 @@ public sealed class SignalRRelayIntegrationTests
     }
 
     [Fact]
-    public async Task ListenerCannotPublishAudioPackets()
+    public async Task RelayRejectsAudioPublishedByAListener()
     {
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.UseKestrel().UseUrls("http://127.0.0.1:0");
@@ -86,12 +87,14 @@ public sealed class SignalRRelayIntegrationTests
         var serverUri = new Uri(address);
 
         await using var host = new SignalRSessionClient(serverUri);
-        await using var listener = new SignalRSessionClient(serverUri);
+        await host.CreateSessionAsync("Host");
 
-        var invitation = await host.CreateSessionAsync("Host");
-        await listener.JoinSessionAsync(invitation.Code, "Listener");
+        await using var listener = new HubConnectionBuilder()
+            .WithUrl(new Uri(serverUri, "/hubs/listening"))
+            .Build();
+        await listener.StartAsync();
+        await listener.InvokeAsync("JoinSession", host.SessionCode!, "Listener");
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            listener.SendAudioPacketAsync(new byte[] { 1, 2, 3 }, 1));
-    }
-}
+        await Assert.ThrowsAsync<HubException>(() =>
+            listener.InvokeAsync("SendAudioPacket", new byte[] { 1, 2, 3 }, 1));
+    }}
