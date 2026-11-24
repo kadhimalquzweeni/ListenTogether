@@ -1,52 +1,46 @@
 # Networking architecture
 
-ListenTogether uses SignalR for session signalling and fallback audio relay, and establishes authenticated direct UDP media paths between peers when NAT traversal succeeds. The desktop prefers direct UDP per listener and relays audio only to participants without an active direct path.
+ListenTogether uses SignalR only for session signalling and encrypted peer-key negotiation. Audio media is sent exclusively over authenticated, encrypted UDP directly between participants. There is no TURN service, audio relay, or server-side media fallback.
 
 ## Connection establishment
 
-1. The desktop client connects to the ASP.NET Core SignalR signalling endpoint over TLS.
-2. A participant gathers local IPv4 UDP host candidates and a server-reflexive candidate using the configured signalling host on UDP port 3478. STUN uses the same UDP socket that is retained for subsequent connectivity checks and media.
-3. Candidates are exchanged through the session signalling channel. Existing participants republish their candidates when a new participant joins, so late joiners receive candidates from everyone.
-4. Both peers send authenticated connectivity checks to the other peer's candidates concurrently (UDP hole punching). The first authenticated endpoint is selected; a later authenticated check can update it if the peer's NAT mapping changes. Periodic keepalives maintain the NAT mapping, and the selected socket remains alive for the duration of the session.
-5. Opus frames are encrypted and sent over the selected UDP path. If a peer has no active direct path, the host relays that peer's audio through SignalR. STUN does not relay traffic and cannot make a private home server reachable through NAT.
+1. Each desktop connects to the ASP.NET Core SignalR endpoint over HTTP/WebSockets (HTTPS/WSS for internet use).
+2. The participant binds an IPv4 UDP socket and gathers local host candidates plus a server-reflexive candidate using the configured signalling host on UDP port 3478. STUN uses the same socket retained for connectivity checks and media.
+3. Participants exchange candidates through SignalR. Existing participants republish their candidates when another participant joins. Candidate publication is retried when a transient signalling error occurs.
+4. Peers negotiate independent P-256 ECDH keys and verify transcript-bound HMAC proofs through the signalling channel.
+5. Once keys are confirmed, peers probe each other's candidates concurrently using authenticated UDP connectivity checks. The first authenticated endpoint is selected. Keepalives maintain NAT mappings; stale paths trigger new candidate checks and retry attempts.
+6. Audio is encoded as 20 ms Opus frames, encrypted with AES-256-GCM and sent directly to each connected peer. A peer without an authenticated UDP path receives no audio. The UI reports the stage and reason, and retries connectivity checks automatically.
+
+The server does not expose an audio-publishing hub method. The desktop client does not contain an audio relay send or receive API. Signalling connectivity alone does not imply that audio connectivity has succeeded.
 
 ## Protected UDP datagrams
 
-The transport foundation uses AES-256-GCM authenticated encryption. Each direction must have its own independently derived 32-byte key and its own 4-byte nonce prefix. A nonce is the 4-byte prefix followed by the 64-bit big-endian packet sequence number. Sequence values must be unique and must never wrap for a given key/prefix pair; establish a fresh key before sequence exhaustion.
+The transport uses AES-256-GCM authenticated encryption. Each direction has its own independently derived 32-byte key and 4-byte nonce prefix. A nonce is the 4-byte prefix followed by the 64-bit big-endian packet sequence number. Sequence values must be unique and must never wrap for a given key/prefix pair; establish a fresh key before sequence exhaustion.
 
 The authenticated header contains the LTUD magic value, protocol version, packet type, session GUID, sequence number and nonce prefix. The complete header is authenticated as additional data, so changing the session, type, sequence or prefix invalidates the authentication tag. The encrypted body is followed by a 16-byte GCM tag.
 
 Receivers enforce a 64-packet sliding replay window. Authentication must succeed before a sequence is committed to the replay window. Datagrams larger than 1,200 bytes, malformed headers, wrong sessions, wrong nonce prefixes, invalid packet types, authentication failures and duplicate/too-old sequences are discarded.
 
-**Key agreement implemented:** `PeerKeyAgreement` creates ephemeral P-256 ECDH key pairs, exchanges public-key offers bound to a session and the two SignalR connection IDs, hashes a canonical transcript, and derives a confirmation key plus independent directional AES-256-GCM keys and nonce prefixes using HKDF-SHA256. Each side emits a transcript-bound HMAC proof; both sides must verify the other proof before constructing packet codecs. Key material is held in disposable result objects and zeroed on disposal.
+## Peer key agreement and signalling
 
-**SignalR signalling implemented:** each created session receives a stable random GUID, returned to every participant. The hub exposes the server-assigned connection ID and relays ECDH offers and 32-byte confirmation proofs directly to a named peer only after verifying that sender and recipient are distinct active members of the same session and that the offer's session/connection fields match the server context. Offers and proofs are bounded before forwarding. The desktop SignalR client exposes session ID, connection ID, peer-offer/proof events, and corresponding send methods. `IPeerKeySignalling` isolates this protocol from SignalR so coordinator orchestration can be tested independently.
+Each session receives a stable random GUID. The hub exposes the server-assigned SignalR connection ID and forwards ECDH offers and 32-byte confirmation proofs only to a named peer after verifying that both connections are distinct active members of the same session. Offers are bounded and bound to the session and both connection IDs.
 
-**Trust requirements:** the HMAC is key confirmation, not identity authentication: a malicious signalling server could substitute both public keys. Current trust is therefore the TLS-protected signalling service and its session membership checks. The desktop enables direct UDP only after the negotiation coordinator verifies both proofs; participants without a verified direct path continue using SignalR relay. For protection against a malicious signalling service, add an independently verifiable peer identity or user-verified fingerprint.
+`PeerKeyNegotiationCoordinator` maintains a separate ECDH agreement for every remote connection. It negotiates with existing participants on join and later participants on `ParticipantJoined`. A peer is considered secured only after both transcript-bound proofs verify. Proofs arriving before local offer processing are held until the agreement is ready. Peer key material is disposed and zeroed when a participant leaves, the session ends, signalling closes, or the coordinator is disposed.
 
-## Deployment constraint
+The HMAC is key confirmation, not identity authentication: a malicious signalling server could substitute both public keys. Current trust is therefore the TLS-protected signalling service and its session membership checks. For protection against a malicious signalling service, add independently verifiable peer identity or a user-verified fingerprint.
 
-A self-hosted STUN/signalling/relay service must be reachable from the public internet to support arbitrary users without router configuration. Hosting the service on a PC behind a typical home NAT is not sufficient by itself. A relay fallback requires a publicly reachable server; STUN alone is not a relay.
+## Candidate gathering and retry behaviour
 
+`UdpCandidateGatherer` binds one IPv4 UDP socket, gathers active local interface addresses and asks the configured STUN endpoint for its server-reflexive mapping. `UdpPeerCandidateCoordinator` owns that candidate set for the session, publishes candidates through SignalR, tracks remote candidates by server-assigned peer connection ID, deduplicates repeats and republishes local candidates when another participant joins.
 
-### Automatic per-peer key negotiation
+If the STUN request times out but local interfaces were found, the gatherer keeps the bound socket and publishes host candidates so same-LAN peers can still connect. If candidate gathering cannot produce a usable socket/candidate set, session startup fails with a diagnostic; audio is not redirected to SignalR.
 
-`PeerKeyNegotiationCoordinator` maintains a separate ECDH agreement for every remote SignalR connection. It starts negotiation with existing peers on `SessionJoined`, and with later arrivals on `ParticipantJoined`. Each peer is considered secured only after the transcript hash and HMAC key-confirmation proof both verify. Proofs arriving before local offer processing are held until the agreement is ready, including the case where the proof datagram/message overtakes the remote offer on the signalling path. Peer key material is disposed and zeroed when that participant leaves, the session ends, the signalling connection closes, or the coordinator is disposed. Subscriber exceptions are isolated from protocol processing. Consumers must keep the coordinator alive for the session and must not dispose a secured result while its key material is in use.
+`UdpPeerTransportCoordinator` creates one AES-256-GCM send/receive codec pair per secured peer. It probes available candidates with authenticated checks, responds to checks, verifies response challenges and records the authenticated remote endpoint. Keepalives run every five seconds. A path with no authenticated traffic for 15 seconds is treated as stale and candidate checks restart. Failed connectivity rounds raise a diagnostic event; the transport retries again and can recover when a peer publishes candidates later.
 
-The coordinator uses the `IPeerKeySignalling` abstraction. Automated tests exercise simultaneous offers, automatic session/participant event startup, proof-before-offer delivery, multiple independent listener keys, and participant departure cleanup.
+## Deployment constraints
 
+A self-hosted signalling/STUN service must be publicly reachable for participants on arbitrary networks. Hosting the service on a home PC behind NAT requires router forwarding (or another public endpoint/tunnel). The server needs TCP 80/443 for HTTPS and UDP 3478 for STUN in the supplied home-hosting setup. Clients do not need inbound router rules.
 
-### UDP candidate gathering and exchange
+STUN is not a relay and cannot guarantee traversal through symmetric or restrictive NATs. If a direct path cannot be established, the participants must change networks or use a different direct-connectivity configuration; ListenTogether intentionally does not conceal this failure with server-side audio forwarding.
 
-`UdpCandidateGatherer` binds one IPv4 UDP socket, gathers active local interface addresses, and asks the configured STUN endpoint for its server-reflexive mapping. `UdpPeerCandidateCoordinator` owns that candidate set for the session, publishes each candidate through SignalR, tracks remote candidates by server-assigned peer connection ID, deduplicates repeats, and republishes local candidates when another participant joins. The host and listener view models start this process after session creation/join and dispose the retained socket during teardown.
-
-Candidate discovery is optional. If the STUN request times out but local interfaces were found, the gatherer keeps the bound socket and publishes host candidates so same-LAN peers can still connect. If DNS resolution fails or no usable local candidates exist, session setup continues using the SignalR relay. The current STUN implementation and gatherer are IPv4-only.
-
-
-### Direct UDP media and fallback
-
-`UdpPeerTransportCoordinator` creates one AES-256-GCM send/receive codec pair per secured peer from the directional ECDH keys. It probes all received candidates with authenticated connectivity checks, responds to checks, verifies the response challenge, and records the authenticated remote endpoint. A keepalive request/response runs every 5 seconds; a path with no authenticated traffic for 15 seconds is considered stale and candidate checks restart. Peer departure disposes that peer's codecs.
-
-The host sends each Opus frame directly to peers whose UDP path is active. The encrypted UDP payload includes the original audio frame sequence; the SignalR hub's `GroupExcept` relay excludes those direct peers and continues delivering to everyone else. If no direct route is active, the host sends the frame through the existing SignalR relay. Direct UDP datagrams are capped at 1,200 bytes; frames too large for the secure UDP envelope are relayed instead. The listener feeds both direct UDP and SignalR-relayed frames into the same bounded 40 ms sequence-aware playout buffer. This keeps frame order stable during path transitions, suppresses duplicates, and skips missing frames after the jitter deadline before Opus decoding.
-
-Direct UDP is now covered by loopback integration tests that gather candidates, negotiate independent peer keys, establish authenticated connectivity, exchange an encrypted Opus payload, and verify the frame sequence. A separate SignalR integration test verifies that direct peers are excluded from fallback relay delivery.
+The current implementation is IPv4-only. Session state is in memory, so a signalling server restart ends active sessions. Invite codes are bearer credentials and should be shared privately.
