@@ -88,7 +88,7 @@ public sealed class PeerKeyAgreementTests
     {
         using var host = PeerKeyAgreement.Create(SessionId, "host", "listener");
         using var listener = PeerKeyAgreement.Create(SessionId, "listener", "host");
-        host.Complete(listener.LocalOffer);
+        using var result = host.Complete(listener.LocalOffer);
 
         Assert.Throws<InvalidOperationException>(() => host.Complete(listener.LocalOffer));
     }
