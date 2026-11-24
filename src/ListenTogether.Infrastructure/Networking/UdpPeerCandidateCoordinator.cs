@@ -40,6 +40,7 @@ public sealed class UdpPeerCandidateCoordinator : IDisposable
 
     /// <summary>Raised when a remote participant's candidate set changes.</summary>
     public event Action<string, IReadOnlyList<PeerCandidate>>? RemoteCandidatesUpdated;
+    public event Action<string>? RemotePeerLeft;
 
     public IReadOnlyList<PeerCandidate> LocalCandidates =>
         _localCandidateSet?.Candidates ?? Array.Empty<PeerCandidate>();
@@ -183,12 +184,35 @@ public sealed class UdpPeerCandidateCoordinator : IDisposable
 
     private void OnParticipantLeft(SessionParticipant participant)
     {
-        if (!string.IsNullOrWhiteSpace(participant.ConnectionId))
-            _remoteCandidates.TryRemove(participant.ConnectionId, out _);
+        if (string.IsNullOrWhiteSpace(participant.ConnectionId))
+            return;
+        _remoteCandidates.TryRemove(participant.ConnectionId, out _);
+        RaiseRemotePeerLeft(participant.ConnectionId);
     }
 
-    private void OnSessionEnded(string _) => _remoteCandidates.Clear();
-    private void OnConnectionClosed(Exception? _) => _remoteCandidates.Clear();
+    private void OnSessionEnded(string _) => ClearRemotePeers();
+    private void OnConnectionClosed(Exception? _) => ClearRemotePeers();
+
+    private void ClearRemotePeers()
+    {
+        foreach (var peerId in _remoteCandidates.Keys)
+        {
+            _remoteCandidates.TryRemove(peerId, out _);
+            RaiseRemotePeerLeft(peerId);
+        }
+    }
+
+    private void RaiseRemotePeerLeft(string peerId)
+    {
+        var handlers = RemotePeerLeft;
+        if (handlers is null)
+            return;
+        foreach (Action<string> handler in handlers.GetInvocationList())
+        {
+            try { handler(peerId); }
+            catch (Exception) { }
+        }
+    }
 
     private void RaiseRemoteCandidatesUpdated(string peerId, IReadOnlyList<PeerCandidate> candidates)
     {
