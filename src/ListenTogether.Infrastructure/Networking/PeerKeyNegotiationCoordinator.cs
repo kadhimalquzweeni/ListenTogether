@@ -179,9 +179,9 @@ public sealed class PeerKeyNegotiationCoordinator : IDisposable
 
             VerifyAndComplete(message.FromConnectionId, state, message);
         }
-        catch (ObjectDisposedException)
+        catch (Exception exception) when (exception is ObjectDisposedException or ArgumentException)
         {
-            // Session teardown races with in-flight SignalR callbacks.
+            // Ignore malformed peer identities and session teardown races.
         }
     }
 
