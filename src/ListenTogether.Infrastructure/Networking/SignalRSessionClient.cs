@@ -14,6 +14,7 @@ public sealed class SignalRSessionClient : IAsyncDisposable
 {
     private readonly HubConnection _connection;
     private string? _sessionCode;
+    private Guid _sessionId;
     private bool _isHost;
     private bool _isDisposed;
 
@@ -36,15 +37,21 @@ public sealed class SignalRSessionClient : IAsyncDisposable
             ParticipantLeft?.Invoke(participant));
         _connection.On<PeerCandidateMessage>("PeerCandidateReceived", message =>
             PeerCandidateReceived?.Invoke(message));
+        _connection.On<PeerKeyOfferMessage>("PeerKeyOfferReceived", message =>
+            PeerKeyOfferReceived?.Invoke(message));
+        _connection.On<PeerKeyProofMessage>("PeerKeyProofReceived", message =>
+            PeerKeyProofReceived?.Invoke(message));
         _connection.On<string>("SessionEnded", reason =>
         {
             _sessionCode = null;
+            _sessionId = Guid.Empty;
             _isHost = false;
             SessionEnded?.Invoke(reason);
         });
         _connection.Closed += exception =>
         {
             _sessionCode = null;
+            _sessionId = Guid.Empty;
             _isHost = false;
             ConnectionClosed?.Invoke(exception);
             return Task.CompletedTask;
@@ -55,12 +62,16 @@ public sealed class SignalRSessionClient : IAsyncDisposable
     public event Action<SessionParticipant>? ParticipantJoined;
     public event Action<SessionParticipant>? ParticipantLeft;
     public event Action<PeerCandidateMessage>? PeerCandidateReceived;
+    public event Action<PeerKeyOfferMessage>? PeerKeyOfferReceived;
+    public event Action<PeerKeyProofMessage>? PeerKeyProofReceived;
     public event Action<string>? SessionEnded;
     public event Action<Exception?>? ConnectionClosed;
 
     public bool IsConnected => _connection.State == HubConnectionState.Connected;
     public bool IsHost => _isHost;
     public string? SessionCode => _sessionCode;
+    public Guid SessionId => _sessionId;
+    public string? ConnectionId { get; private set; }
 
     public async Task<SessionInvitation> CreateSessionAsync(
         string displayName,
@@ -75,6 +86,8 @@ public sealed class SignalRSessionClient : IAsyncDisposable
             cancellationToken).ConfigureAwait(false);
 
         _sessionCode = invitation.Code;
+        _sessionId = invitation.SessionId;
+        ConnectionId = await _connection.InvokeAsync<string>("GetConnectionId", cancellationToken).ConfigureAwait(false);
         _isHost = true;
         return invitation;
     }
@@ -94,6 +107,8 @@ public sealed class SignalRSessionClient : IAsyncDisposable
             cancellationToken).ConfigureAwait(false);
 
         _sessionCode = result.Invitation.Code;
+        _sessionId = result.Invitation.SessionId;
+        ConnectionId = await _connection.InvokeAsync<string>("GetConnectionId", cancellationToken).ConfigureAwait(false);
         _isHost = false;
         return result;
     }
@@ -111,6 +126,42 @@ public sealed class SignalRSessionClient : IAsyncDisposable
             throw new ArgumentException("The peer candidate is invalid.", nameof(candidate));
 
         return _connection.InvokeAsync("PublishPeerCandidate", candidate, cancellationToken);
+    }
+
+    /// <summary>Publishes this participant's ECDH offer to one validated session peer.</summary>
+    public Task PublishPeerKeyOfferAsync(
+        PeerKeyOffer offer,
+        CancellationToken cancellationToken = default)
+    {
+        ThrowIfDisposed();
+        if (!IsConnected || _sessionId == Guid.Empty || ConnectionId is null)
+            throw new InvalidOperationException("Join a connected session before exchanging peer keys.");
+        ArgumentNullException.ThrowIfNull(offer);
+        if (offer.SessionId != _sessionId ||
+            !string.Equals(offer.FromConnectionId, ConnectionId, StringComparison.Ordinal) ||
+            offer.PublicKey is null || offer.PublicKey.Length is < 64 or > 512 ||
+            offer.Nonce is null || offer.Nonce.Length != 32)
+            throw new ArgumentException("The peer key offer is not valid for this connection.", nameof(offer));
+
+        return _connection.InvokeAsync("PublishPeerKeyOffer", offer, cancellationToken);
+    }
+
+    /// <summary>Publishes a transcript-bound key confirmation proof to the named peer.</summary>
+    public Task PublishPeerKeyProofAsync(
+        string toConnectionId,
+        byte[] transcriptHash,
+        byte[] proof,
+        CancellationToken cancellationToken = default)
+    {
+        ThrowIfDisposed();
+        if (!IsConnected || _sessionId == Guid.Empty || string.IsNullOrWhiteSpace(toConnectionId))
+            throw new InvalidOperationException("Join a connected session before exchanging peer keys.");
+        if (transcriptHash is null || transcriptHash.Length != 32 ||
+            proof is null || proof.Length != 32)
+            throw new ArgumentException("The key confirmation proof is invalid.");
+
+        return _connection.InvokeAsync(
+            "PublishPeerKeyProof", _sessionId, toConnectionId, transcriptHash, proof, cancellationToken);
     }
 
     public Task SendAudioPacketAsync(
@@ -139,6 +190,8 @@ public sealed class SignalRSessionClient : IAsyncDisposable
 
         await _connection.InvokeAsync("LeaveSession", cancellationToken).ConfigureAwait(false);
         _sessionCode = null;
+        _sessionId = Guid.Empty;
+        ConnectionId = null;
         _isHost = false;
     }
 
