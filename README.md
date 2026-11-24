@@ -77,6 +77,12 @@ For two PCs on the same network, use the host PC's LAN address in the relay URL,
 
 For friends connecting over the internet, deploy the relay behind a public HTTPS domain. See [Relay deployment](docs/DEPLOYMENT.md). Do not expose an unencrypted HTTP relay to the public internet.
 
+## Internet hosting without router changes
+
+For internet sessions without router port forwarding, a domain, or an inbound firewall rule, use the Cloudflare edge relay described in docs/EDGE_HOSTING.md. The host PC remains the audio source; its desktop app connects outbound over HTTPS/WebSockets and sends Opus audio through the edge relay. Friends connect to the same Worker URL.
+
+The first public path uses the edge relay for media rather than direct UDP peer-to-peer. The self-hosted STUN listener is not publicly reachable from behind home NAT without a public UDP endpoint. Cloudflare's free plan has daily usage limits, so continuous streaming is subject to those quotas.
+
 ## How the audio path works
 
 ```text

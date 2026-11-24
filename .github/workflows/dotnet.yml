@@ -60,3 +60,16 @@ jobs:
           docker compose -f docker-compose.production.yml config --quiet
       - name: Build relay container
         run: docker build --file src/ListenTogether.Server/Dockerfile --tag listen-together-server:test .
+
+  edge-relay:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Test Cloudflare edge relay
+        run: npm test --prefix cloudflare/worker
+      - name: Validate edge worker JavaScript
+        run: node --check cloudflare/worker/src/index.js
