@@ -51,7 +51,7 @@ public sealed class UdpPeerTransportCoordinatorTests
             if (peer == "host")
                 listenerConnected.TrySetResult();
         };
-        listenerTransport.AudioPacketReceived += (peer, payload, _) =>
+        listenerTransport.AudioPacketReceived += (peer, payload, sequence) =>
         {
             if (peer == "host")
                 receivedAudio.TrySetResult((payload, sequence));
