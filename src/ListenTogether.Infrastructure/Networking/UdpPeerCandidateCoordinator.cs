@@ -7,9 +7,8 @@ namespace ListenTogether.Infrastructure.Networking;
 
 /// <summary>
 /// Gathers this participant's UDP endpoints and exchanges them through the
-/// authenticated session signalling channel. It deliberately does not switch
-/// media transport; SignalR remains the media fallback until connectivity checks
-/// and the encrypted UDP media pipeline are complete.
+/// authenticated session signalling channel. The retained socket is reused by
+/// the direct encrypted UDP transport for connectivity checks and audio media.
 /// </summary>
 public sealed class UdpPeerCandidateCoordinator : IDisposable
 {
@@ -46,7 +45,7 @@ public sealed class UdpPeerCandidateCoordinator : IDisposable
         _localCandidateSet?.Candidates ?? Array.Empty<PeerCandidate>();
 
     /// <summary>
-    /// Exposes the same bound socket used for STUN gathering. A future direct
+    /// Exposes the same bound socket used for STUN gathering. The direct UDP
     /// transport must keep this candidate set alive and reuse this socket.
     /// </summary>
     public UdpCandidateSet? LocalCandidateSet => _localCandidateSet;
