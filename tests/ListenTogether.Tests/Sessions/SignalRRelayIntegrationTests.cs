@@ -105,7 +105,44 @@ public sealed class SignalRRelayIntegrationTests
         await listener.InvokeAsync("JoinSession", host.SessionCode!, "Listener");
 
         await Assert.ThrowsAsync<HubException>(() =>
-            listener.InvokeAsync("SendAudioPacket", new byte[] { 1, 2, 3 }, 1));
+            listener.InvokeAsync("SendAudioPacket", new byte[] { 1, 2, 3 }, 1, Array.Empty<string>()));
+    }
+
+    [Fact]
+    public async Task HostCanExcludeDirectUdpPeersFromSignalRRelay()
+    {
+        var builder = WebApplication.CreateBuilder();
+        builder.WebHost.UseKestrel().UseUrls("http://127.0.0.1:0");
+        builder.Services.AddSingleton<SessionRegistry>();
+        builder.Services.AddSignalR();
+
+        await using var app = builder.Build();
+        app.MapHub<ListeningHub>("/hubs/listening");
+        await app.StartAsync();
+
+        var server = app.Services.GetRequiredService<IServer>();
+        var address = Assert.Single(server.Features.Get<IServerAddressesFeature>()!.Addresses);
+        var serverUri = new Uri(address);
+
+        await using var host = new SignalRSessionClient(serverUri);
+        await using var directListener = new SignalRSessionClient(serverUri);
+        await using var relayListener = new SignalRSessionClient(serverUri);
+        var directReceived = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var relayReceived = new TaskCompletionSource<byte[]>(TaskCreationOptions.RunContinuationsAsynchronously);
+        directListener.AudioPacketReceived += (_, _) => directReceived.TrySetResult();
+        relayListener.AudioPacketReceived += (packet, _) => relayReceived.TrySetResult(packet);
+
+        var invitation = await host.CreateSessionAsync("Host");
+        await directListener.JoinSessionAsync(invitation.Code, "Direct listener");
+        await relayListener.JoinSessionAsync(invitation.Code, "Relay listener");
+
+        var packet = new byte[] { 0xF8, 0xFF, 0xFE };
+        await host.SendAudioPacketAsync(
+            packet, 1, new[] { directListener.ConnectionId! });
+
+        Assert.Equal(packet, await relayReceived.Task.WaitAsync(TimeSpan.FromSeconds(5)));
+        await Task.Delay(200);
+        Assert.False(directReceived.Task.IsCompleted);
     }
 
     [Fact]
