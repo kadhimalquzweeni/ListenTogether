@@ -93,7 +93,7 @@ public sealed class PeerKeyNegotiationCoordinator : IDisposable
             catch (Exception)
             {
                 // Keep the participant queued for a later retry; session creation
-                // and the SignalR audio fallback must not fail because UDP setup did.
+                // and peer-key negotiation must remain independent of UDP candidate setup.
             }
         }
     }
