@@ -205,7 +205,7 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
                 _sessionClient.ConnectionClosed += OnConnectionClosed;
                 _peerNegotiation = new PeerKeyNegotiationCoordinator(_sessionClient);
                 _peerNegotiation.PeerSecured += OnPeerSecured;
-                _peerCandidates = new UdpPeerCandidateCoordinator(_sessionClient);
+                var candidateCoordinator = _peerCandidates = new UdpPeerCandidateCoordinator(_sessionClient);
                 _sessionClient.ParticipantJoined += OnParticipantJoined;
                 _sessionClient.ParticipantLeft += OnParticipantLeft;
                 _sessionClient.SessionEnded += OnSessionEnded;
