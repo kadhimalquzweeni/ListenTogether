@@ -145,6 +145,10 @@ dotnet build ListenTogether.sln --configuration Release --no-restore
 dotnet test ListenTogether.sln --configuration Release --no-build --no-restore
 ```
 
+## Desktop release
+
+The release workflow publishes a self-contained Windows x64 desktop package when a version tag (`v*`) is pushed. The relay server is deployed separately; the desktop package does not bundle a public relay service.
+
 ## Deployment
 
 See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for local Docker, LAN testing, and public HTTPS relay deployment.
