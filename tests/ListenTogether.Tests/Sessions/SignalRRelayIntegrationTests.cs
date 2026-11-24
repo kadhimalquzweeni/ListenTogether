@@ -108,40 +108,4 @@ public sealed class SignalRRelayIntegrationTests
         await Assert.ThrowsAsync<HubException>(() =>
             listener.InvokeAsync("SendAudioPacket", new byte[] { 1, 2, 3 }, 1));
     }
-    [Fact]
-    public async Task HostCanSendBatchedOpusFramesToListener()
-    {
-        var builder = WebApplication.CreateBuilder();
-        builder.WebHost.UseKestrel().UseUrls("http://127.0.0.1:0");
-        builder.Services.AddSingleton<SessionRegistry>();
-        builder.Services.AddSignalR();
-
-        await using var app = builder.Build();
-        app.MapHub<ListeningHub>("/hubs/listening");
-        await app.StartAsync();
-        var server = app.Services.GetRequiredService<IServer>();
-        var address = Assert.Single(server.Features.Get<IServerAddressesFeature>()!.Addresses);
-        var serverUri = new Uri(address);
-
-        await using var host = new SignalRSessionClient(serverUri);
-        await using var listener = new SignalRSessionClient(serverUri);
-        var received = new System.Collections.Concurrent.ConcurrentQueue<(byte[] Packet, long Sequence)>();
-        var allReceived = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        listener.AudioPacketReceived += (packet, sequence) =>
-        {
-            received.Enqueue((packet, sequence));
-            if (received.Count == 2) allReceived.TrySetResult();
-        };
-
-        var invitation = await host.CreateSessionAsync("Host");
-        await listener.JoinSessionAsync(invitation.Code, "Listener");
-        var packets = new[] { new byte[] { 1, 2, 3 }, new byte[] { 4, 5, 6 } };
-        await host.SendAudioPacketBatchAsync(packets, new long[] { 1, 2 });
-        await allReceived.Task.WaitAsync(TimeSpan.FromSeconds(5));
-
-        Assert.Collection(received,
-            first => { Assert.Equal(packets[0], first.Packet); Assert.Equal(1, first.Sequence); },
-            second => { Assert.Equal(packets[1], second.Packet); Assert.Equal(2, second.Sequence); });
-    }
-
 }

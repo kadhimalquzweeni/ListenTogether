@@ -137,22 +137,4 @@ public sealed class SessionRegistryTests
         Assert.Equal(1, registry.SessionCount);
         Assert.True(registry.IsHost("host-1"));
     }
-    [Fact]
-    public void TryAcceptAudioPacketBatch_AcceptsOrderedBatchAndRejectsReplay()
-    {
-        var registry = new SessionRegistry();
-        registry.CreateSession("host", "Host");
-
-        Assert.True(registry.TryAcceptAudioPacketBatch(
-            "host", new long[] { 1, 2, 3, 4, 5 }, new int[] { 40, 41, 42, 43, 44 }));
-        Assert.False(registry.TryAcceptAudioPacketBatch(
-            "host", new long[] { 5, 6 }, new int[] { 40, 40 }));
-        Assert.False(registry.TryAcceptAudioPacketBatch(
-            "host", new long[] { 7, 6 }, new int[] { 40, 40 }));
-        Assert.False(registry.TryAcceptAudioPacketBatch(
-            "host", new long[] { 6 }, new int[] { 1_276 }));
-        Assert.False(registry.TryAcceptAudioPacketBatch(
-            "listener", new long[] { 1 }, new int[] { 40 }));
-    }
-
 }

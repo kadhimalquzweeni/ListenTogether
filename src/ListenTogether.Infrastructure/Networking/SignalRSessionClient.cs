@@ -24,11 +24,7 @@ public sealed class SignalRSessionClient : IAsyncDisposable
 
         var hubUri = new Uri(serverUri, "/hubs/listening");
         _connection = new HubConnectionBuilder()
-            .WithUrl(hubUri, options =>
-            {
-                options.Transports = HttpTransportType.WebSockets;
-                options.SkipNegotiation = true;
-            })
+            .WithUrl(hubUri, options => options.Transports = HttpTransportType.WebSockets)
             .Build();
 
         _connection.On<byte[], long>("ReceiveAudioPacket", (packet, sequence) =>
@@ -115,30 +111,6 @@ public sealed class SignalRSessionClient : IAsyncDisposable
             packet,
             sequence,
             cancellationToken);
-    }
-
-    /// <summary>Sends up to five 20 ms Opus frames in one WebSocket message.</summary>
-    public Task SendAudioPacketBatchAsync(
-        IReadOnlyList<byte[]> packets,
-        IReadOnlyList<long> sequences,
-        CancellationToken cancellationToken = default)
-    {
-        ThrowIfDisposed();
-        if (!IsConnected || !_isHost || string.IsNullOrEmpty(_sessionCode))
-            throw new InvalidOperationException("Only a connected session host can send audio.");
-        if (packets is null || sequences is null ||
-            packets.Count is < 1 or > 5 || packets.Count != sequences.Count)
-            throw new ArgumentException("Audio batches must contain between one and five matching packets and sequences.");
-
-        for (var index = 0; index < packets.Count; index++)
-        {
-            if (packets[index] is null || packets[index].Length is < 1 or > 1_275)
-                throw new ArgumentOutOfRangeException(nameof(packets), "Opus packets must contain between 1 and 1,275 bytes.");
-            if (sequences[index] < 0 || (index > 0 && sequences[index] <= sequences[index - 1]))
-                throw new ArgumentOutOfRangeException(nameof(sequences), "Packet sequences must be non-negative and strictly increasing.");
-        }
-
-        return _connection.SendAsync("SendAudioPacketBatch", packets.ToArray(), sequences.ToArray(), cancellationToken);
     }
 
     public async Task LeaveSessionAsync(CancellationToken cancellationToken = default)

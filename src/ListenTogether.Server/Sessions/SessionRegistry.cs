@@ -112,42 +112,6 @@ public sealed class SessionRegistry
         }
     }
 
-    public bool TryAcceptAudioPacketBatch(
-        string connectionId,
-        IReadOnlyList<long> sequences,
-        IReadOnlyList<int> packetLengths)
-    {
-        if (sequences is null || packetLengths is null ||
-            sequences.Count is < 1 or > 5 || sequences.Count != packetLengths.Count)
-            return false;
-
-        for (var index = 0; index < sequences.Count; index++)
-        {
-            if (packetLengths[index] is < 1 or > MaximumOpusPacketBytes ||
-                sequences[index] < 0 ||
-                (index > 0 && sequences[index] <= sequences[index - 1]))
-                return false;
-        }
-
-        lock (_sync)
-        {
-            if (!_connectionSessions.TryGetValue(connectionId, out var code) ||
-                !_sessions.TryGetValue(code, out var session) ||
-                session.HostConnectionId != connectionId ||
-                sequences[0] <= session.LastSequence)
-                return false;
-
-            var now = Stopwatch.GetTimestamp();
-            if (session.LastPacketTimestamp != 0 &&
-                Stopwatch.GetElapsedTime(session.LastPacketTimestamp, now) < TimeSpan.FromMilliseconds(10))
-                return false;
-
-            session.LastSequence = sequences[^1];
-            session.LastPacketTimestamp = now;
-            return true;
-        }
-    }
-
     public SessionDeparture? RemoveConnection(string connectionId)
     {
         lock (_sync)

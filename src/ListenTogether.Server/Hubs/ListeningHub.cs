@@ -65,25 +65,6 @@ public sealed class ListeningHub(SessionRegistry sessions) : Hub
         }
     }
 
-    public async Task SendAudioPacketBatch(byte[][] packets, long[] sequences)
-    {
-        if (packets is null || sequences is null ||
-            !sessions.TryAcceptAudioPacketBatch(
-                Context.ConnectionId,
-                sequences,
-                packets.Select(packet => packet?.Length ?? 0).ToArray()))
-            throw new HubException("This connection cannot publish that audio batch.");
-
-        if (!sessions.TryGetSessionCode(Context.ConnectionId, out var code))
-            throw new HubException("This connection is not in a listening session.");
-
-        for (var index = 0; index < packets.Length; index++)
-        {
-            await Clients.OthersInGroup(code).SendAsync(
-                "ReceiveAudioPacket", packets[index], sequences[index], Context.ConnectionAborted);
-        }
-    }
-
     public async Task LeaveSession()
     {
         var departure = sessions.RemoveConnection(Context.ConnectionId);

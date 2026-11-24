@@ -355,23 +355,13 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
     {
         try
         {
-            while (await reader.WaitToReadAsync(cancellationToken).ConfigureAwait(false))
+            await foreach (var packet in reader.ReadAllAsync(cancellationToken).ConfigureAwait(false))
             {
-                // Five 20 ms frames per message keeps the edge relay efficient.
-                await Task.Delay(TimeSpan.FromMilliseconds(100), cancellationToken).ConfigureAwait(false);
-                var batch = new List<EncodedAudioPacket>(5);
-                while (batch.Count < 5 && reader.TryRead(out var packet))
-                    batch.Add(packet);
-                if (batch.Count == 0)
-                    continue;
-
                 var client = _sessionClient;
                 if (client is null)
                     break;
-                await client.SendAudioPacketBatchAsync(
-                    batch.Select(packet => packet.Payload).ToArray(),
-                    batch.Select(packet => packet.Sequence).ToArray(),
-                    cancellationToken).ConfigureAwait(false);
+
+                await client.SendAudioPacketAsync(packet.Payload, packet.Sequence, cancellationToken).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
