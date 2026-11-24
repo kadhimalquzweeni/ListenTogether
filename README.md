@@ -75,7 +75,7 @@ The listener must be able to reach the same relay URL. Enter that URL and the in
 
 For two PCs on the same network, use the host PC's LAN address in the relay URL, for example `http://192.168.1.20:5000`, and allow inbound TCP port 5000 through the host firewall.
 
-For friends connecting over the internet, deploy the relay behind a public HTTPS domain. See [Relay deployment](docs/DEPLOYMENT.md). Do not expose an unencrypted HTTP relay to the public internet.
+For friends connecting over the internet without router changes or a domain, use the Cloudflare edge relay in [Internet hosting without router changes](docs/EDGE_HOSTING.md). The host PC's desktop app remains the audio source and connects outbound over HTTPS. A traditional public .NET relay deployment is also described in [Relay deployment](docs/DEPLOYMENT.md). Do not expose an unencrypted HTTP relay to the public internet.
 
 ## Internet hosting without router changes
 
