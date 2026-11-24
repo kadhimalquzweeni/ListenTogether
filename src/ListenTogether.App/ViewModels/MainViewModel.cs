@@ -154,7 +154,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         if (!Uri.TryCreate(ServerUrl?.Trim(), UriKind.Absolute, out var uri) ||
             uri.Scheme is not ("http" or "https"))
         {
-            StatusMessage = "Enter a valid relay URL beginning with http:// or https://.";
+            StatusMessage = "Enter a valid server address beginning with http:// or https://.";
             return null;
         }
 
