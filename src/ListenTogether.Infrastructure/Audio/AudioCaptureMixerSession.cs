@@ -77,7 +77,9 @@ public sealed class AudioCaptureMixerSession : IAsyncDisposable
                     capture.Start();
                 }
 
-                _clockCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                // Caller cancellation only governs startup; it must not silently stop
+                // the mixing clock after StartAsync has successfully returned.
+                _clockCancellation = new CancellationTokenSource();
                 Volatile.Write(ref _isRunning, 1);
                 _clockTask = RunClockAsync(_clockCancellation.Token);
             }
