@@ -29,7 +29,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
         CreateSessionCommand = new RelayCommand(CreateSession);
         JoinSessionCommand = new RelayCommand(JoinSession, () => !string.IsNullOrWhiteSpace(SessionCode));
-        CheckHostingCommand = new AsyncRelayCommand(CheckHostingAsync, () => !IsCheckingHosting);
+        CheckHostingCommand = new MainAsyncRelayCommand(CheckHostingAsync, () => !IsCheckingHosting);
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -82,7 +82,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         private set
         {
             if (SetProperty(ref _isCheckingHosting, value))
-                (CheckHostingCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
+                (CheckHostingCommand as MainAsyncRelayCommand)?.RaiseCanExecuteChanged();
         }
     }
 
@@ -212,7 +212,7 @@ public sealed class RelayCommand(Action execute, Func<bool>? canExecute = null) 
     public void RaiseCanExecuteChanged() => CanExecuteChanged?.Invoke(this, EventArgs.Empty);
 }
 
-public sealed class AsyncRelayCommand(Func<Task> execute, Func<bool>? canExecute = null) : ICommand
+public sealed class MainAsyncRelayCommand(Func<Task> execute, Func<bool>? canExecute = null) : ICommand
 {
     public event EventHandler? CanExecuteChanged;
     public bool CanExecute(object? parameter) => canExecute?.Invoke() ?? true;
