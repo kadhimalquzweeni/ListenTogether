@@ -47,13 +47,18 @@ public sealed class UdpCandidateGathererTests
     }
 
     [Fact]
-    public async Task GatherAsync_DisposesSocketWhenStunRequestFails()
+    public async Task GatherAsync_KeepsLocalCandidatesWhenStunRequestTimesOut()
     {
         using var silentServer = new UdpClient(new IPEndPoint(IPAddress.Loopback, 0));
         var gatherer = new UdpCandidateGatherer();
 
-        await Assert.ThrowsAsync<TimeoutException>(() => gatherer.GatherAsync(
+        using var result = await gatherer.GatherAsync(
             (IPEndPoint)silentServer.Client.LocalEndPoint!,
-            TimeSpan.FromMilliseconds(100)));
+            TimeSpan.FromMilliseconds(100));
+
+        Assert.NotEmpty(result.Candidates);
+        Assert.All(result.Candidates, candidate =>
+            Assert.Equal(ListenTogether.Core.Sessions.PeerCandidateType.Host, candidate.Type));
+        Assert.NotNull(result.TransportSocket.Client.LocalEndPoint);
     }
 }
