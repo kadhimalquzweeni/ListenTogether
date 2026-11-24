@@ -30,6 +30,8 @@ public sealed class SessionRegistryTests
         Assert.Equal(2, result.Participants.Count);
         Assert.Contains(result.Participants, participant => participant.DisplayName == "Host" && participant.IsHost);
         Assert.Contains(result.Participants, participant => participant.DisplayName == "Listener" && !participant.IsHost);
+        Assert.Contains(result.Participants, participant => participant.DisplayName == "Host" && participant.ConnectionId == "host-1");
+        Assert.Contains(result.Participants, participant => participant.DisplayName == "Listener" && participant.ConnectionId == "listener-1");
     }
 
     [Fact]
