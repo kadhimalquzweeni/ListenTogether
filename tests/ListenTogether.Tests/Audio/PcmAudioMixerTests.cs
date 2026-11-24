@@ -40,8 +40,8 @@ public sealed class PcmAudioMixerTests
         var mixer = new PcmAudioMixer(Format);
         mixer.AddSource("one", 2f);
         mixer.AddSource("two", 2f);
-        mixer.PushFrame("one", Frame(0.8f, -0.8f));
-        mixer.PushFrame("two", Frame(0.8f, -0.8f));
+        mixer.PushFrame("one", new AudioFrame(new float[] { 0.8f, -0.8f }, Format, DateTimeOffset.UtcNow));
+        mixer.PushFrame("two", new AudioFrame(new float[] { 0.8f, -0.8f }, Format, DateTimeOffset.UtcNow));
 
         var output = mixer.Mix(1);
 
