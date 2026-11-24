@@ -214,11 +214,11 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
                 SessionCode = invitation.Code;
                 try
                 {
-                    await _peerCandidates.StartAsync(_serverUri, stunTimeout: TimeSpan.FromSeconds(2));
+                    await candidateCoordinator.StartAsync(_serverUri, stunTimeout: TimeSpan.FromSeconds(2));
                 }
                 catch (Exception exception)
                 {
-                    _peerCandidates.Dispose();
+                    candidateCoordinator.Dispose();
                     _peerCandidates = null;
                     StatusMessage = $"UDP discovery unavailable; audio will use the SignalR relay. {exception.Message}";
                 }
