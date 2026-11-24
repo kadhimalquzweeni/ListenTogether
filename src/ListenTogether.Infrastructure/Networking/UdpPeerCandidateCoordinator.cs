@@ -137,7 +137,25 @@ public sealed class UdpPeerCandidateCoordinator : IDisposable
             foreach (var candidate in candidates)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                await _signalling.PublishPeerCandidateAsync(candidate, cancellationToken).ConfigureAwait(false);
+                Exception? lastException = null;
+                for (var attempt = 0; attempt < 3; attempt++)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    try
+                    {
+                        await _signalling.PublishPeerCandidateAsync(candidate, cancellationToken).ConfigureAwait(false);
+                        lastException = null;
+                        break;
+                    }
+                    catch (Exception exception) when (exception is not OperationCanceledException)
+                    {
+                        lastException = exception;
+                        if (attempt < 2)
+                            await Task.Delay(TimeSpan.FromMilliseconds(200 * (attempt + 1)), cancellationToken).ConfigureAwait(false);
+                    }
+                }
+                if (lastException is not null)
+                    throw new InvalidOperationException("Unable to publish a UDP candidate after three attempts.", lastException);
             }
         }
         finally
