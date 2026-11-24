@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 using ListenTogether.Server.Networking;
@@ -35,17 +36,42 @@ public sealed class StunServerHostedServiceTests
 
         try
         {
-            using var client = new UdpClient(AddressFamily.InterNetwork);
             var request = CreateBindingRequest();
-            await client.SendAsync(request, new IPEndPoint(IPAddress.Loopback, port));
+            var deadline = Stopwatch.GetTimestamp() + (long)(Stopwatch.Frequency * 3);
 
-            var received = await client.ReceiveAsync().WaitAsync(TimeSpan.FromSeconds(3));
+            // .NET 10 starts BackgroundService.ExecuteAsync on a background thread.
+            // Retry until its UDP socket is bound instead of racing service startup.
+            while (Stopwatch.GetTimestamp() < deadline)
+            {
+                using var client = new UdpClient(AddressFamily.InterNetwork);
+                await client.SendAsync(request, new IPEndPoint(IPAddress.Loopback, port));
 
-            Assert.Equal(StunMessageProcessor.BindingSuccessResponse,
-                BinaryPrimitives.ReadUInt16BigEndian(received.Buffer.AsSpan(0, 2)));
-            Assert.Equal(32, received.Buffer.Length);
-            Assert.Equal((ushort)0x0020,
-                BinaryPrimitives.ReadUInt16BigEndian(received.Buffer.AsSpan(20, 2)));
+                try
+                {
+                    var received = await client.ReceiveAsync()
+                        .WaitAsync(TimeSpan.FromMilliseconds(200));
+
+                    Assert.Equal(StunMessageProcessor.BindingSuccessResponse,
+                        BinaryPrimitives.ReadUInt16BigEndian(received.Buffer.AsSpan(0, 2)));
+                    Assert.Equal(32, received.Buffer.Length);
+                    Assert.Equal((ushort)0x0020,
+                        BinaryPrimitives.ReadUInt16BigEndian(received.Buffer.AsSpan(20, 2)));
+                    return;
+                }
+                catch (SocketException)
+                {
+                    // Windows can report ICMP Port Unreachable for the first
+                    // datagram if the background service has not bound yet.
+                }
+                catch (TimeoutException)
+                {
+                    // The socket may have bound between attempts; retry briefly.
+                }
+
+                await Task.Delay(50);
+            }
+
+            Assert.Fail("The STUN hosted service did not answer a Binding request within three seconds.");
         }
         finally
         {
