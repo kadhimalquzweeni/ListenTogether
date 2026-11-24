@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
@@ -81,20 +82,25 @@ public sealed class UdpPeerTransportCoordinator : IAsyncDisposable
     /// </summary>
     public async Task<IReadOnlyCollection<string>> SendAudioToConnectedPeersAsync(
         ReadOnlyMemory<byte> opusPayload,
+        long audioSequence,
         CancellationToken cancellationToken = default)
     {
         ThrowIfDisposed();
         if (Volatile.Read(ref _started) == 0)
             return Array.Empty<string>();
-        if (opusPayload.Length is < 1 or > UdpSecurePacketCodec.MaximumDatagramSize -
-            UdpSecurePacketCodec.HeaderSize - UdpSecurePacketCodec.AuthenticationTagSize)
+        const int audioSequenceHeaderLength = sizeof(ulong);
+        if (audioSequence <= 0 || opusPayload.Length is < 1 or > UdpSecurePacketCodec.MaximumDatagramSize -
+            UdpSecurePacketCodec.HeaderSize - UdpSecurePacketCodec.AuthenticationTagSize - audioSequenceHeaderLength)
             return Array.Empty<string>();
 
         var socket = _candidates.LocalCandidateSet?.TransportSocket;
         if (socket is null)
             return Array.Empty<string>();
 
-        var payload = opusPayload.ToArray();
+        var opusBytes = opusPayload.ToArray();
+        var payload = new byte[sizeof(ulong) + opusBytes.Length];
+        BinaryPrimitives.WriteUInt64BigEndian(payload, (ulong)audioSequence);
+        Buffer.BlockCopy(opusBytes, 0, payload, sizeof(ulong), opusBytes.Length);
         var sent = new List<string>();
         foreach (var pair in _peers)
         {
@@ -297,8 +303,14 @@ public sealed class UdpPeerTransportCoordinator : IAsyncDisposable
                 break;
 
             case UdpPacketType.Audio:
-                if (state.IsConnectedFrom(remoteEndpoint, PeerTimeout))
-                    RaiseAudioPacketReceived(peerId, packet.Payload, packet.Sequence);
+                if (packet.Payload.Length <= sizeof(ulong) ||
+                    !state.IsConnectedFrom(remoteEndpoint, PeerTimeout))
+                    return;
+                var audioSequence = BinaryPrimitives.ReadUInt64BigEndian(packet.Payload);
+                if (audioSequence == 0)
+                    return;
+                var opusPayload = packet.Payload.AsSpan(sizeof(ulong)).ToArray();
+                RaiseAudioPacketReceived(peerId, opusPayload, audioSequence);
                 break;
         }
     }
