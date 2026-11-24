@@ -69,6 +69,20 @@ public sealed class MainViewModel : INotifyPropertyChanged
         }
     }
 
+    public bool TryApplyInviteDetails(string? text)
+    {
+        if (!InviteDetailsParser.TryParse(text, out var details) || details is null)
+        {
+            StatusMessage = "The clipboard doesn't contain valid ListenTogether invite details.";
+            return false;
+        }
+
+        ServerUrl = details.ServerUrl;
+        SessionCode = details.InviteCode;
+        StatusMessage = "Invite details loaded. Select Join session when you're ready.";
+        return true;
+    }
+
     public Uri? ValidateConnectionSettings()
     {
         if (!Uri.TryCreate(ServerUrl?.Trim(), UriKind.Absolute, out var uri) ||
