@@ -18,6 +18,9 @@ public sealed class ListeningViewModel : INotifyPropertyChanged, IAsyncDisposabl
     private WasapiAudioPlayback? _playback;
     private int _isDisposed;
     private readonly object _decodeLock = new();
+    private readonly UdpAudioJitterBuffer _jitterBuffer = new();
+    private CancellationTokenSource? _jitterCancellation;
+    private Task? _jitterTask;
     private readonly SemaphoreSlim _lifecycle = new(1, 1);
     private readonly string _sessionCode;
     private readonly Uri _serverUri;
@@ -125,6 +128,8 @@ public sealed class ListeningViewModel : INotifyPropertyChanged, IAsyncDisposabl
                     _udpTransport.PeerConnected += OnDirectPeerConnected;
                     _udpTransport.AudioPacketReceived += OnDirectAudioPacketReceived;
                     await _udpTransport.StartAsync();
+                    _jitterCancellation = new CancellationTokenSource();
+                    _jitterTask = DrainJitterBufferAsync(_jitterCancellation.Token);
                 }
                 catch (Exception exception)
                 {
@@ -178,6 +183,8 @@ public sealed class ListeningViewModel : INotifyPropertyChanged, IAsyncDisposabl
         StatusMessage = "Leaving session…";
         IsConnected = false;
 
+        await StopJitterBufferAsync();
+
         if (_udpTransport is not null)
         {
             _udpTransport.PeerConnected -= OnDirectPeerConnected;
@@ -212,6 +219,7 @@ public sealed class ListeningViewModel : INotifyPropertyChanged, IAsyncDisposabl
             _client.ConnectionClosed -= OnConnectionClosed;
 
             await LeaveCoreAsync();
+            await StopJitterBufferAsync();
             lock (_decodeLock)
             {
                 _decoder.Dispose();
@@ -247,7 +255,43 @@ public sealed class ListeningViewModel : INotifyPropertyChanged, IAsyncDisposabl
         => NotifyOnUi(() => StatusMessage = $"Direct UDP audio connection established with {peerConnectionId}.");
 
     private void OnDirectAudioPacketReceived(string peerConnectionId, byte[] packet, ulong sequence)
-        => OnAudioPacketReceived(packet, sequence <= long.MaxValue ? (long)sequence : 0);
+        => _jitterBuffer.TryEnqueue(sequence, packet);
+
+    private async Task DrainJitterBufferAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(10));
+            while (await timer.WaitForNextTickAsync(cancellationToken).ConfigureAwait(false))
+            {
+                foreach (var frame in _jitterBuffer.DrainReady())
+                    OnAudioPacketReceived(frame.Payload, frame.Sequence <= long.MaxValue ? (long)frame.Sequence : 0);
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Normal session teardown.
+        }
+    }
+
+    private async Task StopJitterBufferAsync()
+    {
+        var cancellation = _jitterCancellation;
+        _jitterCancellation = null;
+        if (cancellation is not null)
+        {
+            await cancellation.CancelAsync().ConfigureAwait(false);
+            if (_jitterTask is not null)
+            {
+                try { await _jitterTask.ConfigureAwait(false); }
+                catch (OperationCanceledException) { }
+            }
+            cancellation.Dispose();
+        }
+
+        _jitterTask = null;
+        _jitterBuffer.Clear();
+    }
 
     private void OnAudioPacketReceived(byte[] packet, long sequence)
     {
