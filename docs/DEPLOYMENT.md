@@ -52,12 +52,12 @@ The Caddy reverse proxy must support WebSocket upgrades. Caddy's `reverse_proxy`
 - The server accepts Opus packets up to 1,275 bytes and limits the host packet cadence.
 - Session codes are random eight-character bearer credentials. Anyone with a code can join that session.
 - Session state is held in process memory. A restart or deployment replacement ends all sessions.
-- Run a single relay instance. The current in-memory registry is not shared between replicas.
+- Run a single signalling server instance. The current in-memory registry is not shared between replicas.
 - Use HTTPS/WSS for internet traffic. Do not publish the container's plain HTTP port directly to the internet.
 - The signalling server never handles live audio packets; media travels directly between peers over encrypted UDP.
 - At the default Opus bitrate, estimate approximately 128 kbit/s of host upload per listener, plus protocol overhead and server egress.
 
-For production use, put the relay behind a firewall and trusted TLS reverse proxy. Keep the Docker container's port private to the proxy.
+For production use, put the signalling server behind a firewall and trusted TLS reverse proxy. Keep the Docker container's port private to the proxy.
 
 
 ## Direct UDP and reachability
