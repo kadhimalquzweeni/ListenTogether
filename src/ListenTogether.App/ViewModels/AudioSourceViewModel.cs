@@ -203,8 +203,8 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
             {
                 _sessionClient = _sessionClientFactory.Create(_serverUri);
                 _sessionClient.ConnectionClosed += OnConnectionClosed;
-                _peerNegotiation = new PeerKeyNegotiationCoordinator(_sessionClient);
-                _peerNegotiation.PeerSecured += OnPeerSecured;
+                var peerNegotiation = _peerNegotiation = new PeerKeyNegotiationCoordinator(_sessionClient);
+                peerNegotiation.PeerSecured += OnPeerSecured;
                 var candidateCoordinator = _peerCandidates = new UdpPeerCandidateCoordinator(_sessionClient);
                 _sessionClient.ParticipantJoined += OnParticipantJoined;
                 _sessionClient.ParticipantLeft += OnParticipantLeft;
@@ -212,6 +212,7 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
 
                 var invitation = await _sessionClient.CreateSessionAsync(_displayName);
                 SessionCode = invitation.Code;
+                await peerNegotiation.BeginPendingPeersAsync();
                 try
                 {
                     await candidateCoordinator.StartAsync(_serverUri, stunTimeout: TimeSpan.FromSeconds(2));
