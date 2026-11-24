@@ -32,7 +32,7 @@ public sealed class WasapiAudioCaptureFactory : IAudioCaptureFactory
         switch (source.Kind)
         {
             case AudioSourceKind.System:
-                builder.WithLoopbackCapture();
+                builder.WithLoopbackCapture().WithPollingSync();
                 break;
 
             case AudioSourceKind.Application:
