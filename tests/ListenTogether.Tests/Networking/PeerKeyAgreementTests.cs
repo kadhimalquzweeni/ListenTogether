@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using ListenTogether.Core.Sessions;
 using ListenTogether.Infrastructure.Networking;
 
 namespace ListenTogether.Tests.Networking;
