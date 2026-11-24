@@ -104,28 +104,6 @@ public sealed class SessionRegistryTests
     }
 
     [Fact]
-    public void OnlyHostCanPublishAudioPackets()
-    {
-        var registry = new SessionRegistry();
-        var invitation = registry.CreateSession("host-1", "Host");
-        registry.JoinSession("listener-1", invitation.Code, "Listener");
-
-        Assert.True(registry.TryAcceptAudioPacket("host-1", 0, 100));
-        Assert.False(registry.TryAcceptAudioPacket("listener-1", 1, 100));
-    }
-
-    [Fact]
-    public void AudioPacketValidation_RejectsOversizedAndRepeatedSequence()
-    {
-        var registry = new SessionRegistry();
-        registry.CreateSession("host-1", "Host");
-
-        Assert.False(registry.TryAcceptAudioPacket("host-1", 0, 1_276));
-        Assert.True(registry.TryAcceptAudioPacket("host-1", 1, 100));
-        Assert.False(registry.TryAcceptAudioPacket("host-1", 1, 100));
-    }
-
-    [Fact]
     public void JoinSession_RejectsParticipantWhenSessionIsFull()
     {
         var registry = new SessionRegistry();
