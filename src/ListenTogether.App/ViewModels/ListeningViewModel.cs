@@ -101,6 +101,11 @@ public sealed class ListeningViewModel : INotifyPropertyChanged, IAsyncDisposabl
                 var result = await _client.JoinSessionAsync(_sessionCode, _displayName);
                 if (Volatile.Read(ref _isDisposed) == 1)
                     return;
+                if (_client.SessionCode is null)
+                {
+                    StatusMessage = "The host ended the session before you could join.";
+                    return;
+                }
 
                 HostDisplayName = result.HostDisplayName;
                 ParticipantCount = result.Participants.Count;
@@ -146,6 +151,7 @@ public sealed class ListeningViewModel : INotifyPropertyChanged, IAsyncDisposabl
         catch (Exception exception) { StatusMessage = $"Couldn't leave cleanly: {exception.Message}"; }
 
         _playback?.Clear();
+        ParticipantCount = 0;
         StatusMessage = "You've left the listening session.";
     }
 
@@ -213,6 +219,7 @@ public sealed class ListeningViewModel : INotifyPropertyChanged, IAsyncDisposabl
         => NotifyOnUi(() =>
         {
             IsConnected = false;
+            ParticipantCount = 0;
             _playback?.Clear();
             StatusMessage = reason;
         });
@@ -221,6 +228,7 @@ public sealed class ListeningViewModel : INotifyPropertyChanged, IAsyncDisposabl
         => NotifyOnUi(() =>
         {
             IsConnected = false;
+            ParticipantCount = 0;
             _playback?.Clear();
             StatusMessage = exception is null
                 ? "Connection to the relay was closed."
