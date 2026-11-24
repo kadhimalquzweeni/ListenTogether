@@ -77,6 +77,11 @@ $env:ASPNETCORE_ENVIRONMENT = "Production"
 $env:ACME_EMAIL = $AcmeEmail
 $env:LISTENTOGETHER_PUBLIC_IP = $publicIp
 
+& $caddyPath validate --config $caddyfile --adapter caddyfile
+if ($LASTEXITCODE -ne 0) {
+    throw "Caddy rejected its configuration. Check the Caddyfile and detected IP address."
+}
+
 $settingsDirectory = Join-Path $env:LOCALAPPDATA "ListenTogether"
 New-Item -ItemType Directory -Path $settingsDirectory -Force | Out-Null
 $addressPath = Join-Path $settingsDirectory "server-address.txt"
