@@ -70,10 +70,15 @@ public sealed class PeerKeyNegotiationCoordinator : IDisposable
     /// This closes the small race where a listener joins while the host's create
     /// request is still returning its session and connection IDs.
     /// </summary>
-    public Task BeginPendingPeersAsync(CancellationToken cancellationToken = default)
+    public async Task BeginPendingPeersAsync(CancellationToken cancellationToken = default)
     {
         ThrowIfDisposed();
-        return BeginPeersAsync(_pendingPeers.Keys.ToArray(), cancellationToken);
+        foreach (var peerId in _pendingPeers.Keys.ToArray())
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            await BeginPeerAsync(peerId, cancellationToken).ConfigureAwait(false);
+            _pendingPeers.TryRemove(peerId, out _);
+        }
     }
 
     /// <summary>Starts negotiations with every other participant in the join result.</summary>
