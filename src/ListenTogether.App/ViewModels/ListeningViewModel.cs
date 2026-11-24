@@ -170,7 +170,11 @@ public sealed class ListeningViewModel : INotifyPropertyChanged, IAsyncDisposabl
             _client.ConnectionClosed -= OnConnectionClosed;
 
             await LeaveCoreAsync();
-            _decoder.Dispose();
+            lock (_decodeLock)
+            {
+                _decoder.Dispose();
+                _playback?.Clear();
+            }
             if (_playback is not null)
             {
                 await _playback.DisposeAsync();
