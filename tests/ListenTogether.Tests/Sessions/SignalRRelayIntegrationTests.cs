@@ -157,11 +157,14 @@ public sealed class SignalRRelayIntegrationTests
         var address = Assert.Single(server.Features.Get<IServerAddressesFeature>()!.Addresses);
         var serverUri = new Uri(address);
 
-        await using var host = new SignalRSessionClient(serverUri);
-        var invitation = await host.CreateSessionAsync("Host");
-        var invalid = new PeerCandidate("attacker.example", 45000, PeerCandidateType.Host);
+        await using var connection = new HubConnectionBuilder()
+            .WithUrl(new Uri(serverUri, "/hubs/listening"))
+            .Build();
+        await connection.StartAsync();
+        await connection.InvokeAsync<SessionInvitation>("CreateSession", "Host");
 
+        var invalid = new PeerCandidate("attacker.example", 45000, PeerCandidateType.Host);
         await Assert.ThrowsAsync<HubException>(() =>
-            host.PublishPeerCandidateAsync(invalid));
+            connection.InvokeAsync("PublishPeerCandidate", invalid));
     }
 }
