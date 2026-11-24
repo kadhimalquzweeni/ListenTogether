@@ -521,15 +521,11 @@ public sealed class UdpPeerTransportCoordinator : IAsyncDisposable
             {
                 if (_disposed)
                     return false;
-                if (_connectedEndpoint is not null)
-                {
-                    _lastReceivedUtc = DateTimeOffset.UtcNow;
-                    return false;
-                }
-
+                var isNewEndpoint = _connectedEndpoint is null ||
+                    !_connectedEndpoint.Equals(endpoint);
                 _connectedEndpoint = new IPEndPoint(endpoint.Address, endpoint.Port);
                 _lastReceivedUtc = DateTimeOffset.UtcNow;
-                return true;
+                return isNewEndpoint;
             }
         }
 
