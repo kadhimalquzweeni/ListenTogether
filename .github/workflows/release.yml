@@ -1,6 +1,13 @@
 name: Release
 
 on:
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: "Release tag to create"
+        required: true
+        default: "v0.1.0-preview"
+        type: string
   push:
     tags:
       - "v*"
@@ -33,6 +40,9 @@ jobs:
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ inputs.tag_name || github.ref_name }}
+          target_commitish: ${{ github.sha }}
+          name: ListenTogether ${{ inputs.tag_name || github.ref_name }}
           draft: true
           generate_release_notes: true
           files: artifacts/release/ListenTogether-win-x64.zip
