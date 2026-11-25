@@ -82,14 +82,6 @@ Start a session in the desktop app. Use **Copy invite details** in the audio-sha
 
 The server address is not a secret. Treat the invite code as a private bearer credential and only share it with the intended listener.
 
-## 7. Test STUN directly (optional)
-
-Run this from a second PC connected to a different network (for example, a laptop on a mobile hotspot), with the repository script available:
-
-    .\scripts\home-server\Test-Stun.ps1 -Server "YOUR_PUBLIC_IP"
-
-A successful result prints the public UDP IP:port mapping observed by STUN. Running this test from inside the same home network may fail if the router does not support NAT loopback; that does not by itself mean external access is broken.
-
 ## Troubleshooting
 
 | Symptom | Likely cause / check |
