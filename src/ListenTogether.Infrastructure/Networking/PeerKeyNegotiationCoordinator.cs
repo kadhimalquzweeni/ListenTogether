@@ -13,6 +13,9 @@ public sealed class PeerKeyNegotiationCoordinator : IDisposable
     private readonly IPeerKeySignalling _session;
     private readonly ConcurrentDictionary<string, PeerState> _peers = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, byte> _pendingPeers = new(StringComparer.Ordinal);
+    private readonly object _pendingMessagesSync = new();
+    private readonly Queue<PeerKeyOfferMessage> _pendingOffers = new();
+    private readonly Queue<PeerKeyProofMessage> _pendingProofs = new();
     private bool _disposed;
 
     public PeerKeyNegotiationCoordinator(IPeerKeySignalling session)
@@ -137,8 +140,22 @@ public sealed class PeerKeyNegotiationCoordinator : IDisposable
             return state.IsSecured ? state.Result : null;
     }
 
-    private void OnPeerKeyOfferReceived(PeerKeyOfferMessage message) =>
+    private void OnPeerKeyOfferReceived(PeerKeyOfferMessage message)
+    {
+        if (message is null)
+            return;
+
+        lock (_pendingMessagesSync)
+        {
+            if (!HasSessionIdentity())
+            {
+                _pendingOffers.Enqueue(message);
+                return;
+            }
+        }
+
         _ = ProcessOfferAsync(message);
+    }
 
     private async Task ProcessOfferAsync(PeerKeyOfferMessage message)
     {
@@ -188,6 +205,23 @@ public sealed class PeerKeyNegotiationCoordinator : IDisposable
     }
 
     private void OnPeerKeyProofReceived(PeerKeyProofMessage message)
+    {
+        if (message is null)
+            return;
+
+        lock (_pendingMessagesSync)
+        {
+            if (!HasSessionIdentity())
+            {
+                _pendingProofs.Enqueue(message);
+                return;
+            }
+        }
+
+        ProcessPeerKeyProof(message);
+    }
+
+    private void ProcessPeerKeyProof(PeerKeyProofMessage message)
     {
         try
         {
@@ -286,8 +320,35 @@ public sealed class PeerKeyNegotiationCoordinator : IDisposable
         return _peers.GetOrAdd(remoteConnectionId, _ => new PeerState());
     }
 
-    private void OnSessionJoined(SessionJoinResult result) =>
+    private void OnSessionJoined(SessionJoinResult result)
+    {
+        PeerKeyOfferMessage[] offers;
+        PeerKeyProofMessage[] proofs;
+
+        // SignalR can deliver a peer offer while JoinSession is still awaiting
+        // its response. At that point the client has not yet stored SessionId
+        // or ConnectionId, so processing the message would discard it. Drain
+        // under the same lock used by the receive callbacks to avoid a lost
+        // message at the identity-ready transition.
+        lock (_pendingMessagesSync)
+        {
+            offers = _pendingOffers.ToArray();
+            proofs = _pendingProofs.ToArray();
+            _pendingOffers.Clear();
+            _pendingProofs.Clear();
+        }
+
+        foreach (var offer in offers)
+            _ = ProcessOfferAsync(offer);
+        foreach (var proof in proofs)
+            ProcessPeerKeyProof(proof);
+
         _ = BeginSessionPeersSafelyAsync(result);
+    }
+
+    private bool HasSessionIdentity() =>
+        _session.SessionId != Guid.Empty &&
+        !string.IsNullOrWhiteSpace(_session.ConnectionId);
 
     private async Task BeginSessionPeersSafelyAsync(SessionJoinResult result)
     {
@@ -348,6 +409,12 @@ public sealed class PeerKeyNegotiationCoordinator : IDisposable
 
     private void ClearPeers()
     {
+        lock (_pendingMessagesSync)
+        {
+            _pendingOffers.Clear();
+            _pendingProofs.Clear();
+        }
+
         foreach (var peerId in _peers.Keys)
             RemovePeer(peerId);
         _pendingPeers.Clear();

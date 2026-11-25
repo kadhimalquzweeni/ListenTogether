@@ -74,6 +74,40 @@ public sealed class PeerKeyNegotiationCoordinatorTests
     }
 
     [Fact]
+    public async Task PeerOfferArrivingBeforeListenerSessionIdentity_IsBufferedAndNegotiated()
+    {
+        var network = new InMemoryPeerNetwork(SessionId);
+        var hostSignalling = network.AddPeer("host");
+        var listenerSignalling = network.AddPeer("listener", Guid.Empty);
+        using var host = new PeerKeyNegotiationCoordinator(hostSignalling);
+        using var listener = new PeerKeyNegotiationCoordinator(listenerSignalling);
+        var secured = new CountdownEvent(2);
+
+        host.PeerSecured += (_, _) => secured.Signal();
+        listener.PeerSecured += (_, _) => secured.Signal();
+
+        // The hub can notify the host that the listener joined before the
+        // listener's JoinSession invocation has returned and populated its
+        // SessionId. The host's first offer must not be discarded.
+        await host.BeginPeerAsync("listener");
+        Assert.Empty(listener.SecuredPeers);
+
+        listenerSignalling.SetSessionIdentity(SessionId, "listener");
+        listenerSignalling.RaiseSessionJoined(new SessionJoinResult(
+            new SessionInvitation("ABC12345", null, SessionId),
+            "Host",
+            [
+                new SessionParticipant("Host", true, "host"),
+                new SessionParticipant("Listener", false, "listener")
+            ],
+            new SessionParticipant("Listener", false, "listener")));
+
+        Assert.True(secured.Wait(TimeSpan.FromSeconds(5)));
+        Assert.Contains("listener", host.SecuredPeers);
+        Assert.Contains("host", listener.SecuredPeers);
+    }
+
+    [Fact]
     public async Task ParticipantJoiningBeforeHostIdentityReady_IsRetriedAfterSessionCreation()
     {
         var network = new InMemoryPeerNetwork(SessionId);
