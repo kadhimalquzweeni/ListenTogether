@@ -56,7 +56,9 @@ function Test-StunBinding {
         $request[1] = 1
         $request[4] = 0x21; $request[5] = 0x12; $request[6] = 0xA4; $request[7] = 0x42
         $transaction = [byte[]]::new(12)
-        [System.Security.Cryptography.RandomNumberGenerator]::Fill($transaction)
+        $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+        try { $rng.GetBytes($transaction) }
+        finally { $rng.Dispose() }
         [Array]::Copy($transaction, 0, $request, 8, 12)
 
         [void]$udp.Send($request, $request.Length, $endpoint)
