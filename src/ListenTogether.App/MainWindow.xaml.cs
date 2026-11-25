@@ -23,17 +23,17 @@ public partial class MainWindow : Window
 
         try
         {
-            if (!Clipboard.ContainsText())
+            if (!System.Windows.Clipboard.ContainsText())
             {
                 viewModel.TryApplyInviteDetails(null);
                 return;
             }
 
-            viewModel.TryApplyInviteDetails(Clipboard.GetText());
+            viewModel.TryApplyInviteDetails(System.Windows.Clipboard.GetText());
         }
         catch (Exception exception) when (exception is System.Runtime.InteropServices.ExternalException or InvalidOperationException)
         {
-            MessageBox.Show(this, "Couldn't read the clipboard. Please copy the invite details again and retry.",
+            System.Windows.MessageBox.Show(this, "Couldn't read the clipboard. Please copy the invite details again and retry.",
                 "ListenTogether", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
     }
@@ -46,11 +46,11 @@ public partial class MainWindow : Window
 
         try
         {
-            Clipboard.SetText(viewModel.HostingCheckResult);
+            System.Windows.Clipboard.SetText(viewModel.HostingCheckResult);
         }
         catch (Exception exception) when (exception is System.Runtime.InteropServices.ExternalException or InvalidOperationException)
         {
-            MessageBox.Show(this, "Couldn't copy the hosting check details. Please try again.",
+            System.Windows.MessageBox.Show(this, "Couldn't copy the hosting check details. Please try again.",
                 "ListenTogether", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
     }

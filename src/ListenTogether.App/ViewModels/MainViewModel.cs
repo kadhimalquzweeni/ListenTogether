@@ -1,7 +1,9 @@
 using System.ComponentModel;
 using System.IO;
+using System.Net.Mail;
 using System.Runtime.CompilerServices;
 using System.Windows.Input;
+using ListenTogether.App.Hosting;
 using ListenTogether.App.Networking;
 using ListenTogether.App.Settings;
 
@@ -12,17 +14,26 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private string _sessionCode = string.Empty;
     private string _serverUrl = "http://localhost:5000";
     private string _displayName = Environment.UserName;
+    private string _acmeEmail = string.Empty;
     private string _statusMessage = "Create a session to share your audio, or join a friend's session.";
     private bool _isCheckingHosting;
+    private bool _isStartingServer;
+    private bool _isStoppingServer;
+    private bool _hideServerConsole;
     private string _hostingCheckResult = string.Empty;
     private bool _canCopyHostingResult;
     private readonly UserSettingsStore _settingsStore;
     private readonly IHostReadinessChecker _hostReadinessChecker;
+    private readonly IHomeServerLauncher _homeServerLauncher;
 
-    public MainViewModel(UserSettingsStore? settingsStore = null, IHostReadinessChecker? hostReadinessChecker = null)
+    public MainViewModel(
+        UserSettingsStore? settingsStore = null,
+        IHostReadinessChecker? hostReadinessChecker = null,
+        IHomeServerLauncher? homeServerLauncher = null)
     {
         _settingsStore = settingsStore ?? new UserSettingsStore();
         _hostReadinessChecker = hostReadinessChecker ?? new HostReadinessChecker();
+        _homeServerLauncher = homeServerLauncher ?? new HomeServerLauncher();
         var settings = _settingsStore.Load();
         _serverUrl = settings.ServerUrl;
         _displayName = settings.DisplayName;
@@ -30,6 +41,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
         CreateSessionCommand = new RelayCommand(CreateSession);
         JoinSessionCommand = new RelayCommand(JoinSession, () => !string.IsNullOrWhiteSpace(SessionCode));
         CheckHostingCommand = new MainAsyncRelayCommand(CheckHostingAsync, () => !IsCheckingHosting);
+        StartServerCommand = new MainAsyncRelayCommand(StartServerAsync, () => !IsStartingServer && !IsStoppingServer);
+        StopServerCommand = new MainAsyncRelayCommand(StopServerAsync, () => !IsStartingServer && !IsStoppingServer);
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -56,6 +69,18 @@ public sealed class MainViewModel : INotifyPropertyChanged
     {
         get => _displayName;
         set => SetProperty(ref _displayName, value);
+    }
+
+    public string AcmeEmail
+    {
+        get => _acmeEmail;
+        set => SetProperty(ref _acmeEmail, value);
+    }
+
+    public bool HideServerConsole
+    {
+        get => _hideServerConsole;
+        set => SetProperty(ref _hideServerConsole, value);
     }
 
     public string StatusMessage
@@ -86,9 +111,111 @@ public sealed class MainViewModel : INotifyPropertyChanged
         }
     }
 
+    public bool IsStartingServer
+    {
+        get => _isStartingServer;
+        private set
+        {
+            if (SetProperty(ref _isStartingServer, value))
+            {
+                (StartServerCommand as MainAsyncRelayCommand)?.RaiseCanExecuteChanged();
+                (StopServerCommand as MainAsyncRelayCommand)?.RaiseCanExecuteChanged();
+            }
+        }
+    }
+
     public ICommand CreateSessionCommand { get; }
     public ICommand JoinSessionCommand { get; }
     public ICommand CheckHostingCommand { get; }
+    public ICommand StartServerCommand { get; }
+    public ICommand StopServerCommand { get; }
+
+    public bool IsStoppingServer
+    {
+        get => _isStoppingServer;
+        private set
+        {
+            if (SetProperty(ref _isStoppingServer, value))
+            {
+                (StartServerCommand as MainAsyncRelayCommand)?.RaiseCanExecuteChanged();
+                (StopServerCommand as MainAsyncRelayCommand)?.RaiseCanExecuteChanged();
+            }
+        }
+    }
+
+    public async Task StartServerAsync()
+    {
+        if (IsStartingServer || IsStoppingServer)
+            return;
+
+        if (!MailAddress.TryCreate(AcmeEmail?.Trim(), out var email) ||
+            !string.Equals(email.Address, AcmeEmail?.Trim(), StringComparison.OrdinalIgnoreCase))
+        {
+            StatusMessage = "Enter a valid email address for Caddy's Let's Encrypt certificate account.";
+            return;
+        }
+
+        IsStartingServer = true;
+        HostingCheckResult = string.Empty;
+        CanCopyHostingResult = false;
+        StatusMessage = "Starting the ListenTogether server, STUN service and HTTPS endpoint…";
+
+        try
+        {
+            var result = await _homeServerLauncher.StartAsync(email.Address, HideServerConsole);
+            if (!string.IsNullOrWhiteSpace(result.ServerUrl))
+                ServerUrl = result.ServerUrl;
+
+            StatusMessage = result.Message;
+            if (!result.Started)
+            {
+                HostingCheckResult = result.Message;
+                CanCopyHostingResult = true;
+            }
+        }
+        catch (Exception exception)
+        {
+            StatusMessage = "Couldn't start the home server: " + exception.Message;
+            HostingCheckResult = StatusMessage;
+            CanCopyHostingResult = true;
+        }
+        finally
+        {
+            IsStartingServer = false;
+        }
+    }
+
+    public async Task StopServerAsync()
+    {
+        if (IsStartingServer || IsStoppingServer)
+            return;
+
+        IsStoppingServer = true;
+        HostingCheckResult = string.Empty;
+        CanCopyHostingResult = false;
+        StatusMessage = "Stopping the ListenTogether server, STUN service and HTTPS endpoint…";
+
+        try
+        {
+            var result = await _homeServerLauncher.StopAsync(HideServerConsole);
+            StatusMessage = result.Message;
+            if (!result.Stopped)
+            {
+                HostingCheckResult = result.Message;
+                CanCopyHostingResult = true;
+            }
+        }
+        catch (Exception exception)
+        {
+            StatusMessage = "Couldn't stop the home server: " + exception.Message;
+            HostingCheckResult = StatusMessage;
+            CanCopyHostingResult = true;
+        }
+        finally
+        {
+            IsStoppingServer = false;
+        }
+    }
 
     public async Task CheckHostingAsync()
     {

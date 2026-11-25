@@ -20,19 +20,28 @@ public sealed class OpusAudioEncoder : IDisposable
     private int _pendingSamples;
     private bool _isDisposed;
 
-    public OpusAudioEncoder(int bitrate = 128_000)
+    public OpusAudioEncoder(int bitrate = AdaptiveBitrateController.DefaultBitrate)
     {
-        if (bitrate is < 16_000 or > 512_000)
-            throw new ArgumentOutOfRangeException(nameof(bitrate));
-
         _encoder = OpusCodecFactory.CreateEncoder(
             AudioFormat.Broadcast.SampleRate,
             AudioFormat.Broadcast.Channels,
             OpusApplication.OPUS_APPLICATION_AUDIO);
-        _encoder.Bitrate = bitrate;
+        SetBitrate(bitrate);
     }
 
     public int PendingSampleCount => _pendingSamples;
+    public int Bitrate { get; private set; }
+
+    /// <summary>Changes the target bitrate without resetting the encoder's prediction state.</summary>
+    public void SetBitrate(int bitrate)
+    {
+        ObjectDisposedException.ThrowIf(_isDisposed, this);
+        if (bitrate is < 16_000 or > 512_000)
+            throw new ArgumentOutOfRangeException(nameof(bitrate));
+
+        _encoder.Bitrate = bitrate;
+        Bitrate = bitrate;
+    }
 
     public IReadOnlyList<byte[]> Encode(AudioFrame frame)
     {

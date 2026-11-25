@@ -1,20 +1,21 @@
 using System.Runtime.InteropServices;
 using ListenTogether.Core.Audio;
+using NAudio.CoreAudioApi;
 using NAudio.Wave;
 
 namespace ListenTogether.Infrastructure.Audio;
 
-/// <summary>
-/// Plays decoded remote PCM through the default Windows output device.
-/// </summary>
+/// <summary>Plays decoded remote PCM through a selected Windows output device.</summary>
 public sealed class WasapiAudioPlayback : IAsyncDisposable
 {
     private readonly BoundedPcmWaveProvider _buffer;
     private readonly WasapiPlayer _player;
+    private readonly IDisposable? _deviceOwner;
+    private readonly IDisposable? _enumeratorOwner;
     private int _isStarted;
     private int _isDisposed;
 
-    public WasapiAudioPlayback(int bufferMilliseconds = 250)
+    public WasapiAudioPlayback(int bufferMilliseconds = 250, string? outputDeviceId = null)
     {
         if (bufferMilliseconds is < 40 or > 2_000)
             throw new ArgumentOutOfRangeException(nameof(bufferMilliseconds));
@@ -22,19 +23,49 @@ public sealed class WasapiAudioPlayback : IAsyncDisposable
         var waveFormat = WaveFormat.CreateIeeeFloatWaveFormat(
             AudioFormat.Broadcast.SampleRate,
             AudioFormat.Broadcast.Channels);
+        _buffer = new BoundedPcmWaveProvider(waveFormat, TimeSpan.FromMilliseconds(bufferMilliseconds));
 
-        _buffer = new BoundedPcmWaveProvider(
-            waveFormat,
-            TimeSpan.FromMilliseconds(bufferMilliseconds));
+        MMDeviceEnumerator? enumerator = null;
+        MMDevice? device = null;
+        try
+        {
+            var builder = new WasapiPlayerBuilder()
+                .WithLatency(Math.Min(bufferMilliseconds, 100))
+                .WithMmcssThreadPriority("Pro Audio");
+            if (!string.IsNullOrWhiteSpace(outputDeviceId))
+            {
+                enumerator = new MMDeviceEnumerator();
+                device = enumerator.GetDevice(outputDeviceId);
+                builder.WithDevice(device);
+            }
 
-        _player = new WasapiPlayerBuilder()
-            .WithLatency(Math.Min(bufferMilliseconds, 100))
-            .WithMmcssThreadPriority("Pro Audio")
-            .Build();
-        _player.Init(_buffer);
+            _player = builder.Build();
+            _player.Init(_buffer);
+            _deviceOwner = device;
+            _enumeratorOwner = enumerator;
+        }
+        catch
+        {
+            device?.Dispose();
+            enumerator?.Dispose();
+            throw;
+        }
     }
 
     public bool IsPlaying => Volatile.Read(ref _isStarted) == 1;
+
+    /// <summary>Listener-local playback volume; this never changes the host's shared mix.</summary>
+    public float Volume
+    {
+        get => _player.Volume;
+        set => _player.Volume = Math.Clamp(value, 0f, 1f);
+    }
+
+    public bool IsMuted
+    {
+        get => _player.IsMuted;
+        set => _player.IsMuted = value;
+    }
 
     public void Start()
     {
@@ -47,7 +78,6 @@ public sealed class WasapiAudioPlayback : IAsyncDisposable
     {
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _isDisposed) == 1, this);
         ArgumentNullException.ThrowIfNull(frame);
-
         if (frame.Format != AudioFormat.Broadcast)
             throw new ArgumentException("Playback requires 48 kHz stereo PCM.", nameof(frame));
 
@@ -62,8 +92,16 @@ public sealed class WasapiAudioPlayback : IAsyncDisposable
             return;
 
         Volatile.Write(ref _isStarted, 0);
-        _player.Stop();
-        await _player.DisposeAsync().ConfigureAwait(false);
+        try
+        {
+            _player.Stop();
+            await _player.DisposeAsync().ConfigureAwait(false);
+        }
+        finally
+        {
+            _deviceOwner?.Dispose();
+            _enumeratorOwner?.Dispose();
+        }
         GC.SuppressFinalize(this);
     }
 }
@@ -96,17 +134,12 @@ public sealed class BoundedPcmWaveProvider : IWaveProvider
 
     public WaveFormat WaveFormat { get; }
     public int CapacityBytes => _buffer.Length;
-
-    public int BufferedBytes
-    {
-        get { lock (_sync) return _count; }
-    }
+    public int BufferedBytes { get { lock (_sync) return _count; } }
 
     public void AddSamples(ReadOnlySpan<byte> samples)
     {
         if (samples.Length % WaveFormat.BlockAlign != 0)
             throw new ArgumentException("PCM data must contain complete audio frames.", nameof(samples));
-
         if (samples.IsEmpty)
             return;
 

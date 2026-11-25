@@ -7,7 +7,7 @@ This guide runs the signalling service and self-hosted STUN service on your Wind
 ## Requirements
 
 - Windows 10/11 x64.
-- .NET 10 SDK to publish locally, or the Windows x64 server artifact from GitHub Actions.
+- .NET 10 SDK to publish locally. The desktop app automatically publishes the server on the first Start Server attempt if it is missing.
 - Caddy 2.10 or later for Windows.
 - Router administrator access and a public IPv4 address. Your router's WAN IPv4 must match the public IPv4 detected by the launcher; otherwise your ISP or another upstream router may be using NAT.
 - A static/reserved LAN IPv4 address for the server PC.
@@ -15,15 +15,7 @@ This guide runs the signalling service and self-hosted STUN service on your Wind
 
 No domain name, DuckDNS account, or dynamic DNS updater is required.
 
-## 1. Publish the server
-
-From the repository root, run:
-
-    dotnet publish src/ListenTogether.Server/ListenTogether.Server.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o artifacts/server
-
-The server defaults to loopback HTTP on 127.0.0.1:5000, while STUN binds to 0.0.0.0:3478/UDP. This is intentional: Caddy handles public HTTPS, and STUN is exposed directly through the router.
-
-## 2. Configure your router
+## 1. Configure your router
 
 Reserve a fixed LAN address for the server PC in your router. Forward these ports to that LAN address:
 
@@ -35,7 +27,7 @@ Reserve a fixed LAN address for the server PC in your router. Forward these port
 
 Do not forward TCP 5000. It is deliberately loopback-only.
 
-## 3. Run the guided setup script
+## 2. Run the guided setup script
 
 Open PowerShell as Administrator in the repository root and run:
 
@@ -45,9 +37,13 @@ This creates inbound Windows Firewall rules for TCP 80/443 and UDP 3478, then li
 
 The script deliberately does not attempt to log in to or modify your router: router interfaces and APIs vary, and guessing could change unrelated settings. You must add the three forwarding rules shown by the script.
 
-## 4. Start the server
+## 3. Start the server
 
-Install Caddy 2.10 or later and ensure caddy.exe is on PATH. From the repository root, run PowerShell as Administrator:
+Install Caddy 2.10 or later and ensure caddy.exe is on PATH. In the desktop app, enter your ACME email address and select **Start Server**. If the server executable is missing, ListenTogether automatically runs the equivalent of:
+
+    dotnet publish src/ListenTogether.Server/ListenTogether.Server.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o artifacts/server
+
+The first start can take several minutes while the .NET SDK restores and publishes the server. You can also run the script directly from an elevated PowerShell window:
 
     .\scripts\home-server\Start-Server.ps1 -AcmeEmail "you@example.com"
 
@@ -66,7 +62,7 @@ Check locally:
 - https://YOUR_PUBLIC_IP/healthz should return healthy after Caddy obtains its certificate.
 - Set the desktop app's server URL to the detected `https://YOUR_PUBLIC_IP` address. The launcher saves the detected address in the file above for the host PC.
 
-## 5. Verify router configuration from your friend's network
+## 4. Verify router configuration from your friend's network
 
 After the host has started the server, copy the public IPv4 address and send it to your friend. Have them connect their PC to a different internet connection (for example, a mobile hotspot), open PowerShell, and run the diagnostic script from a copy of the repository:
 
@@ -76,19 +72,11 @@ The diagnostic tests TCP 80, TCP 443, and an actual STUN Binding request over UD
 
 Run this test from outside the host's home network. Some routers do not support NAT loopback, so testing your own public IP from your home Wi-Fi can report false failures. A TCP port check cannot prove UDP forwarding; the STUN request tests UDP 3478 specifically.
 
-## 6. Share an invite with your friend
+## 5. Share an invite with your friend
 
 Start a session in the desktop app. Use **Copy invite details** in the audio-sharing window to copy the server address and eight-character invite code together. Send that text to your friend. On their desktop app, they select **Paste invite details**; ListenTogether fills in the server address and invite code. They then select **Join session**.
 
 The server address is not a secret. Treat the invite code as a private bearer credential and only share it with the intended listener.
-
-## 7. Test STUN directly (optional)
-
-Run this from a second PC connected to a different network (for example, a laptop on a mobile hotspot), with the repository script available:
-
-    .\scripts\home-server\Test-Stun.ps1 -Server "YOUR_PUBLIC_IP"
-
-A successful result prints the public UDP IP:port mapping observed by STUN. Running this test from inside the same home network may fail if the router does not support NAT loopback; that does not by itself mean external access is broken.
 
 ## Troubleshooting
 

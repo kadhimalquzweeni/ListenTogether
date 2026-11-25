@@ -13,9 +13,13 @@ Listeners join with an eight-character invite code and hear the host's live mix.
 
 - .NET 10 WPF desktop application.
 - Windows process discovery, WASAPI system loopback and per-application process-loopback capture.
-- Multi-source 48 kHz stereo PCM mixing with per-source gain and bounded buffering.
-- 20 ms Opus encoding/decoding using Concentus.
-- Low-latency Windows audio playback with a bounded buffer.
+- Multi-source 48 kHz stereo PCM mixing with per-source gain, mute and bounded buffering.
+- Live source switching: add/remove applications or switch between system and application capture without restarting the session.
+- Selectable Windows render devices for system loopback capture and listener playback.
+- Host peak/RMS meters, shared-mix master gain, and listener-local volume/mute controls.
+- 20 ms Opus encoding/decoding using Concentus with adaptive 32–192 kbps bitrate selection based on local send-queue pressure.
+- Low-latency Windows audio playback with a bounded buffer and runtime output-device switching.
+- Live participant lists, per-peer direct UDP status, session notifications and notification-area controls.
 - SignalR sessions with eight-character invite codes and participant events; SignalR carries signalling only.
 - Self-hosted RFC 8489 STUN Binding server and IPv4 host/server-reflexive candidate gathering.
 - Session-scoped ECDH P-256 key agreement and HMAC peer confirmation.
@@ -74,6 +78,7 @@ See [Networking architecture](docs/NETWORKING_ARCHITECTURE.md) for the connectio
 - The signalling service supports up to 16 participants per session, including the host.
 - Invite codes are bearer credentials: anyone with a code can join. Share them privately.
 - Audio packets are encrypted and travel directly between peers; the signalling server does not receive or save media packets.
+- Adaptive bitrate currently uses local send-queue pressure, packet drops at the local bounded queue and send duration. It does not yet use receiver-reported packet loss or end-to-end bandwidth estimates.
 - Some protected media paths may not be capturable. ListenTogether does not bypass DRM or other content protections.
 - Only share audio you have the right to share.
 

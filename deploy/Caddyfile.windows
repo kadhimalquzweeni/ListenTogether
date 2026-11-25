@@ -1,5 +1,7 @@
 {
+    debug
     email {$ACME_EMAIL}
+    default_sni {$LISTENTOGETHER_PUBLIC_IP}
 }
 
 {$LISTENTOGETHER_PUBLIC_IP} {

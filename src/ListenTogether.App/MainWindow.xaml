@@ -98,7 +98,46 @@
                 </Border>
             </Grid>
 
-            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,18,0,0">
+            <Border Background="{StaticResource PanelBackgroundBrush}" BorderBrush="#303541"
+                    BorderThickness="1" CornerRadius="12" Padding="16" Margin="0,18,0,0">
+                <StackPanel>
+                    <TextBlock Text="HOST YOUR SERVER" FontSize="10" FontWeight="SemiBold"
+                               Foreground="#858DA0" Margin="0,0,0,8" />
+                    <TextBlock Text="Start or stop the signalling server, STUN and secure HTTPS endpoint on this PC."
+                               Foreground="{StaticResource TextSecondaryBrush}" FontSize="12"
+                               TextWrapping="Wrap" Margin="0,0,0,12" />
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="12" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0">
+                            <TextBlock Text="ACME EMAIL" FontSize="9" FontWeight="SemiBold"
+                                       Foreground="#858DA0" Margin="2,0,0,4" />
+                            <TextBox Style="{StaticResource DarkTextBox}" FontSize="11"
+                                     Text="{Binding AcmeEmail, UpdateSourceTrigger=PropertyChanged}"
+                                     ToolTip="Email used by Let's Encrypt for Caddy certificate management" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Bottom">
+                            <Button Content="Start Server" Command="{Binding StartServerCommand}"
+                                    Style="{StaticResource PrimaryButton}" MinWidth="125" />
+                            <Button Content="Stop Server" Command="{Binding StopServerCommand}"
+                                    Style="{StaticResource SecondaryButton}" MinWidth="110" Margin="8,0,0,0" />
+                        </StackPanel>
+                    </Grid>
+                    <CheckBox Content="Hide PowerShell window (run in background)"
+                              IsChecked="{Binding HideServerConsole}"
+                              Foreground="{StaticResource TextSecondaryBrush}"
+                              FontSize="11" Margin="2,10,0,0"
+                              ToolTip="Starts PowerShell without showing its console. If startup fails, turn this off to see the error output." />
+                    <TextBlock Text="Requires the published server, Caddy 2.10+, and the router setup to be completed once."
+                               Foreground="{StaticResource TextSecondaryBrush}" FontSize="10"
+                               TextWrapping="Wrap" Margin="2,8,0,0" />
+                </StackPanel>
+            </Border>
+
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,12,0,0">
                 <Button Content="Check if I can host" Command="{Binding CheckHostingCommand}"
                         Style="{StaticResource SecondaryButton}" MinWidth="190" />
                 <TextBlock Text="Checks server health and UDP STUN from this PC."
@@ -128,11 +167,6 @@
             </Border>
         </StackPanel>
 
-        <DockPanel Grid.Row="2" Margin="0,30,0,0">
-            <TextBlock Text="LISTENTOGETHER  •  DESKTOP" FontSize="10" FontWeight="SemiBold"
-                       Foreground="#737B8C" />
-            <TextBlock DockPanel.Dock="Right" Text="Audio sharing, together." FontSize="10"
-                       Foreground="#737B8C" />
-        </DockPanel>
+        <DockPanel Grid.Row="2" Margin="0,30,0,0"/>
     </Grid>
 </Window>

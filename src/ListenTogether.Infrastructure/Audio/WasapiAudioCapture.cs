@@ -4,20 +4,27 @@ using NAudio.Wave;
 
 namespace ListenTogether.Infrastructure.Audio;
 
-/// <summary>
-/// Owns a NAudio WASAPI recorder and publishes managed PCM frames.
-/// </summary>
+/// <summary>Owns a NAudio WASAPI recorder and publishes managed PCM frames.</summary>
 internal sealed class WasapiAudioCapture : IAudioCapture
 {
     private readonly WasapiRecorder _recorder;
+    private readonly IDisposable? _deviceOwner;
+    private readonly IDisposable? _enumeratorOwner;
     private int _isCapturing;
     private int _isDisposed;
 
-    public WasapiAudioCapture(AudioSource source, AudioFormat format, WasapiRecorder recorder)
+    public WasapiAudioCapture(
+        AudioSource source,
+        AudioFormat format,
+        WasapiRecorder recorder,
+        IDisposable? deviceOwner = null,
+        IDisposable? enumeratorOwner = null)
     {
         Source = source ?? throw new ArgumentNullException(nameof(source));
         Format = format;
         _recorder = recorder ?? throw new ArgumentNullException(nameof(recorder));
+        _deviceOwner = deviceOwner;
+        _enumeratorOwner = enumeratorOwner;
         _recorder.DataAvailable += OnDataAvailable;
     }
 
@@ -31,14 +38,10 @@ internal sealed class WasapiAudioCapture : IAudioCapture
     public void Start()
     {
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _isDisposed) == 1, this);
-
         if (Interlocked.CompareExchange(ref _isCapturing, 1, 0) != 0)
             throw new InvalidOperationException("Audio capture is already running.");
 
-        try
-        {
-            _recorder.StartRecording();
-        }
+        try { _recorder.StartRecording(); }
         catch
         {
             Volatile.Write(ref _isCapturing, 0);
@@ -49,7 +52,6 @@ internal sealed class WasapiAudioCapture : IAudioCapture
     public async Task StopAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-
         if (Interlocked.Exchange(ref _isCapturing, 0) == 1)
             await Task.Run(_recorder.StopRecording).ConfigureAwait(false);
     }
@@ -60,7 +62,6 @@ internal sealed class WasapiAudioCapture : IAudioCapture
             return;
 
         _recorder.DataAvailable -= OnDataAvailable;
-
         try
         {
             if (Interlocked.Exchange(ref _isCapturing, 0) == 1)
@@ -68,7 +69,12 @@ internal sealed class WasapiAudioCapture : IAudioCapture
         }
         finally
         {
-            await _recorder.DisposeAsync().ConfigureAwait(false);
+            try { await _recorder.DisposeAsync().ConfigureAwait(false); }
+            finally
+            {
+                _deviceOwner?.Dispose();
+                _enumeratorOwner?.Dispose();
+            }
         }
 
         GC.SuppressFinalize(this);
@@ -87,21 +93,14 @@ internal sealed class WasapiAudioCapture : IAudioCapture
         {
             var samples = PcmSampleConverter.FromIeeeFloat32LittleEndian(buffer);
             var frame = new AudioFrame(samples, Format, DateTimeOffset.UtcNow);
-
             var handlers = AudioFrameAvailable;
             if (handlers is null)
                 return;
 
             foreach (Action<AudioFrame> handler in handlers.GetInvocationList())
             {
-                try
-                {
-                    handler(frame);
-                }
-                catch (Exception exception)
-                {
-                    NotifyFault(exception);
-                }
+                try { handler(frame); }
+                catch (Exception exception) { NotifyFault(exception); }
             }
         }
         catch (Exception exception)
@@ -118,14 +117,8 @@ internal sealed class WasapiAudioCapture : IAudioCapture
 
         foreach (Action<Exception> handler in handlers.GetInvocationList())
         {
-            try
-            {
-                handler(exception);
-            }
-            catch
-            {
-                // Subscriber failures must not escape onto the WASAPI capture thread.
-            }
+            try { handler(exception); }
+            catch { /* Subscriber failures must not escape onto the WASAPI capture thread. */ }
         }
     }
 }

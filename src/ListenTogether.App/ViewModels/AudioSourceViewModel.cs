@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading.Channels;
 using System.Windows;
@@ -13,13 +14,17 @@ namespace ListenTogether.App.ViewModels;
 
 public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposable
 {
+    private const int PacketQueueCapacity = 12;
     private readonly IAudioSourceDiscovery _discovery;
+    private readonly IAudioDeviceDiscovery _deviceDiscovery;
     private readonly IAudioCaptureFactory _captureFactory;
     private readonly Uri _serverUri;
     private readonly string _displayName;
     private readonly SignalRSessionClientFactory _sessionClientFactory;
     private readonly List<AudioSourceItemViewModel> _activeGainSources = [];
     private readonly SemaphoreSlim _sessionLifecycle = new(1, 1);
+    private readonly SemaphoreSlim _sourceSwitchLock = new(1, 1);
+    private AdaptiveBitrateController _bitrateController = new();
     private AudioCaptureMixerSession? _captureSession;
     private SignalRSessionClient? _sessionClient;
     private PeerKeyNegotiationCoordinator? _peerNegotiation;
@@ -30,14 +35,21 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
     private CancellationTokenSource? _streamCancellation;
     private Task? _streamTask;
     private AudioSourceItemViewModel? _systemAudioSource;
+    private AudioDevice? _selectedOutputDevice;
     private bool _isSystemAudioMode = true;
     private bool _isLoading;
     private bool _isCapturing;
     private string _statusMessage = "Choose system audio or select one or more applications.";
     private string _sessionCode = string.Empty;
     private double _outputLevel;
+    private double _outputRmsLevel;
+    private double _shareVolume = 100;
+    private int _currentBitrate = AdaptiveBitrateController.DefaultBitrate;
     private int _participantCount;
     private long _packetSequence;
+    private long _droppedPacketCount;
+    private long _lastMeterUpdateTimestamp;
+    private int _requestedBitrate = AdaptiveBitrateController.DefaultBitrate;
     private int _isDisposed;
 
     public AudioSourceViewModel(
@@ -45,13 +57,15 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
         IAudioCaptureFactory captureFactory,
         Uri serverUri,
         string displayName,
-        SignalRSessionClientFactory? sessionClientFactory = null)
+        SignalRSessionClientFactory? sessionClientFactory = null,
+        IAudioDeviceDiscovery? deviceDiscovery = null)
     {
         _discovery = discovery ?? throw new ArgumentNullException(nameof(discovery));
         _captureFactory = captureFactory ?? throw new ArgumentNullException(nameof(captureFactory));
         _serverUri = serverUri ?? throw new ArgumentNullException(nameof(serverUri));
         _displayName = string.IsNullOrWhiteSpace(displayName) ? throw new ArgumentException("A display name is required.", nameof(displayName)) : displayName.Trim();
         _sessionClientFactory = sessionClientFactory ?? new SignalRSessionClientFactory();
+        _deviceDiscovery = deviceDiscovery ?? new WindowsAudioDeviceDiscovery();
 
         RefreshCommand = new AsyncRelayCommand(RefreshAsync, () => !IsLoading && !IsCapturing);
         StartCommand = new AsyncRelayCommand(StartAsync, () => !IsLoading && !IsCapturing);
@@ -59,13 +73,39 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
-
     public ObservableCollection<AudioSourceItemViewModel> ApplicationSources { get; } = [];
+    public ObservableCollection<AudioDevice> OutputDevices { get; } = [];
+    public ObservableCollection<ParticipantItemViewModel> Participants { get; } = [];
 
     public AudioSourceItemViewModel? SystemAudioSource
     {
         get => _systemAudioSource;
         private set => SetProperty(ref _systemAudioSource, value);
+    }
+
+    public AudioDevice? SelectedOutputDevice
+    {
+        get => _selectedOutputDevice;
+        set
+        {
+            if (!SetProperty(ref _selectedOutputDevice, value) || SystemAudioSource is null)
+                return;
+
+            var previous = SystemAudioSource;
+            previous.GainChanged -= OnSelectedSourceGainChanged;
+            var replacement = new AudioSourceItemViewModel(
+                new AudioSource(previous.Source.Id, previous.Source.DisplayName, AudioSourceKind.System,
+                    deviceId: value?.Id),
+                previous.IsSelected)
+            {
+                Volume = previous.Volume,
+                IsMuted = previous.IsMuted
+            };
+            replacement.GainChanged += OnSelectedSourceGainChanged;
+            SystemAudioSource = replacement;
+            if (IsCapturing)
+                _ = ApplySelectedSourcesAsync();
+        }
     }
 
     public bool IsSystemAudioMode
@@ -74,7 +114,11 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
         set
         {
             if (SetProperty(ref _isSystemAudioMode, value))
+            {
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsApplicationMode)));
+                if (IsCapturing)
+                    _ = ApplySelectedSourcesAsync();
+            }
         }
     }
 
@@ -136,10 +180,30 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
         private set => SetProperty(ref _outputLevel, Math.Clamp(value, 0, 100));
     }
 
+    public double OutputRmsLevel
+    {
+        get => _outputRmsLevel;
+        private set => SetProperty(ref _outputRmsLevel, Math.Clamp(value, 0, 100));
+    }
+
+    /// <summary>Master gain applied to the shared mix before Opus encoding.</summary>
+    public double ShareVolume
+    {
+        get => _shareVolume;
+        set => SetProperty(ref _shareVolume, Math.Clamp(value, 0, 100));
+    }
+
+    public int CurrentBitrate
+    {
+        get => _currentBitrate;
+        private set => SetProperty(ref _currentBitrate, value);
+    }
+
+    public long DroppedPacketCount => Interlocked.Read(ref _droppedPacketCount);
     public int SelectedApplicationCount => ApplicationSources.Count(source => source.IsSelected);
     public int AvailableApplicationCount => ApplicationSources.Count;
     public bool CanStart => !IsLoading && !IsCapturing;
-    public bool CanEditSources => !IsLoading && !IsCapturing;
+    public bool CanEditSources => !IsLoading;
     public bool HasSessionCode => !string.IsNullOrWhiteSpace(SessionCode);
 
     public ICommand RefreshCommand { get; }
@@ -152,13 +216,25 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
             return;
 
         IsLoading = true;
-        StatusMessage = "Looking for audio applications…";
+        StatusMessage = "Looking for audio devices and applications…";
 
         try
         {
+            var devices = await _deviceDiscovery.GetOutputDevicesAsync();
+            OutputDevices.Clear();
+            foreach (var device in devices)
+                OutputDevices.Add(device);
+            SelectedOutputDevice = devices.FirstOrDefault(device => device.IsDefault) ?? devices.FirstOrDefault();
+
             var sources = await _discovery.GetAvailableSourcesAsync();
             var system = sources.FirstOrDefault(source => source.Kind == AudioSourceKind.System);
-            SystemAudioSource = system is null ? null : new AudioSourceItemViewModel(system, true);
+            if (system is not null)
+            {
+                var systemSource = new AudioSource(system.Id, system.DisplayName, AudioSourceKind.System,
+                    deviceId: SelectedOutputDevice?.Id);
+                SystemAudioSource = new AudioSourceItemViewModel(systemSource, true);
+                SystemAudioSource.GainChanged += OnSelectedSourceGainChanged;
+            }
 
             ApplicationSources.Clear();
             foreach (var source in sources.Where(source => source.Kind == AudioSourceKind.Application))
@@ -170,11 +246,11 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
 
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(AvailableApplicationCount)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SelectedApplicationCount)));
-            StatusMessage = $"Found {ApplicationSources.Count} applications. Choose what you want to share.";
+            StatusMessage = $"Found {OutputDevices.Count} output devices and {ApplicationSources.Count} applications.";
         }
         catch (Exception exception)
         {
-            StatusMessage = $"Couldn't refresh audio sources: {exception.Message}";
+            StatusMessage = $"Couldn't refresh audio devices and sources: {exception.Message}";
         }
         finally
         {
@@ -213,6 +289,10 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
 
                 var invitation = await _sessionClient.CreateSessionAsync(_displayName);
                 SessionCode = invitation.Code;
+                Participants.Clear();
+                Participants.Add(new ParticipantItemViewModel(
+                    new SessionParticipant(_displayName, true, _sessionClient.ConnectionId)));
+                ParticipantCount = Participants.Count;
                 await peerNegotiation.BeginPendingPeersAsync();
                 StatusMessage = "Gathering local and STUN UDP candidates…";
                 await candidateCoordinator.StartAsync(_serverUri, stunTimeout: TimeSpan.FromSeconds(2));
@@ -221,12 +301,15 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
                 _udpTransport.PeerConnectionAttemptStarted += OnPeerConnectionAttemptStarted;
                 _udpTransport.PeerConnectionFailed += OnPeerConnectionFailed;
                 await _udpTransport.StartAsync();
-                ParticipantCount = 1;
+                ParticipantCount = Participants.Count;
 
-                _encoder = new OpusAudioEncoder();
-                _packetChannel = Channel.CreateBounded<EncodedAudioPacket>(new BoundedChannelOptions(100)
+                _bitrateController = new AdaptiveBitrateController();
+                Volatile.Write(ref _requestedBitrate, _bitrateController.CurrentBitrate);
+                Interlocked.Exchange(ref _droppedPacketCount, 0);
+                _encoder = new OpusAudioEncoder(_bitrateController.CurrentBitrate);
+                _packetChannel = Channel.CreateBounded<EncodedAudioPacket>(new BoundedChannelOptions(PacketQueueCapacity)
                 {
-                    FullMode = BoundedChannelFullMode.DropOldest,
+                    FullMode = BoundedChannelFullMode.Wait,
                     SingleReader = true,
                     SingleWriter = true
                 });
@@ -240,7 +323,8 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
                 foreach (var item in selectedItems)
                 {
                     item.GainChanged += OnSelectedSourceGainChanged;
-                    _activeGainSources.Add(item);
+                    if (!_activeGainSources.Contains(item))
+                        _activeGainSources.Add(item);
                 }
 
                 await _captureSession.StartAsync();
@@ -257,26 +341,19 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
             {
                 var message = exception.Message;
                 try { await CleanupSessionAsync(); }
-                catch (Exception cleanupException)
-                {
-                    message += " Cleanup also failed: " + cleanupException.Message;
-                }
+                catch (Exception cleanupException) { message += " Cleanup also failed: " + cleanupException.Message; }
 
                 IsCapturing = false;
                 OutputLevel = 0;
+                OutputRmsLevel = 0;
                 SessionCode = string.Empty;
                 ParticipantCount = 0;
+                Participants.Clear();
                 StatusMessage = "Couldn't start the session: " + message;
             }
-            finally
-            {
-                IsLoading = false;
-            }
+            finally { IsLoading = false; }
         }
-        finally
-        {
-            _sessionLifecycle.Release();
-        }
+        finally { _sessionLifecycle.Release(); }
     }
 
     public async Task StopAsync()
@@ -293,14 +370,15 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
 
             IsLoading = true;
             StatusMessage = "Stopping the listening session…";
-
             try
             {
-                await CleanupSessionAsync();
                 IsCapturing = false;
+                await CleanupSessionAsync();
                 OutputLevel = 0;
+                OutputRmsLevel = 0;
                 SessionCode = string.Empty;
                 ParticipantCount = 0;
+                Participants.Clear();
                 StatusMessage = "Session ended. Your audio is no longer being shared.";
             }
             catch (Exception exception)
@@ -308,15 +386,9 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
                 IsCapturing = false;
                 StatusMessage = $"Couldn't stop the session cleanly: {exception.Message}";
             }
-            finally
-            {
-                IsLoading = false;
-            }
+            finally { IsLoading = false; }
         }
-        finally
-        {
-            _sessionLifecycle.Release();
-        }
+        finally { _sessionLifecycle.Release(); }
     }
 
     public async ValueTask DisposeAsync()
@@ -327,6 +399,7 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
         await _sessionLifecycle.WaitAsync();
         try
         {
+            IsCapturing = false;
             try { await CleanupSessionAsync(); }
             catch { /* The window is closing; all teardown stages are attempted before this point. */ }
             IsCapturing = false;
@@ -335,13 +408,13 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
         {
             _sessionLifecycle.Release();
             _sessionLifecycle.Dispose();
+            _sourceSwitchLock.Dispose();
         }
     }
 
     private IReadOnlyList<AudioSourceItemViewModel> GetSelection(out AudioSourceSelection? selection)
     {
         selection = null;
-
         if (IsSystemAudioMode)
         {
             if (SystemAudioSource is null)
@@ -349,7 +422,6 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
                 StatusMessage = "The system audio source wasn't found. Refresh the list and try again.";
                 return [];
             }
-
             selection = AudioSourceSelection.System(SystemAudioSource.Source);
             return [SystemAudioSource];
         }
@@ -365,20 +437,92 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
         return selected;
     }
 
+    private async Task ApplySelectedSourcesAsync()
+    {
+        var captureSession = _captureSession;
+        if (!IsCapturing || captureSession is null || Volatile.Read(ref _isDisposed) == 1)
+            return;
+
+        try { await _sourceSwitchLock.WaitAsync(); }
+        catch (ObjectDisposedException) { return; }
+        try
+        {
+            if (!IsCapturing || !ReferenceEquals(captureSession, _captureSession))
+                return;
+
+            AudioSourceItemViewModel[] desired;
+            if (IsSystemAudioMode)
+                desired = SystemAudioSource is null ? [] : [SystemAudioSource];
+            else
+                desired = ApplicationSources.Where(source => source.IsSelected).ToArray();
+
+            foreach (var active in _activeGainSources.ToArray())
+            {
+                var replacement = desired.FirstOrDefault(item =>
+                    string.Equals(item.Source.Id, active.Source.Id, StringComparison.Ordinal));
+                if (replacement is not null && Equals(replacement.Source, active.Source))
+                    continue;
+
+                await captureSession.RemoveSourceAsync(active.Source.Id);
+                active.GainChanged -= OnSelectedSourceGainChanged;
+                _activeGainSources.Remove(active);
+            }
+
+            foreach (var item in desired)
+            {
+                if (_activeGainSources.Any(active => Equals(active.Source, item.Source)))
+                    continue;
+
+                await captureSession.AddSourceAsync(item.Source);
+                captureSession.SetGain(item.Source.Id, item.EffectiveGain);
+                item.GainChanged += OnSelectedSourceGainChanged;
+                _activeGainSources.Add(item);
+            }
+
+            StatusMessage = desired.Length == 0
+                ? "No audio sources selected. Choose at least one application to resume sharing audio."
+                : $"Updated shared audio sources ({desired.Length} active).";
+        }
+        catch (Exception exception)
+        {
+            NotifyOnUi(() => StatusMessage = $"Couldn't switch audio sources: {exception.Message}");
+        }
+        finally { _sourceSwitchLock.Release(); }
+    }
+
     private async Task StreamPacketsAsync(ChannelReader<EncodedAudioPacket> reader, CancellationToken cancellationToken)
     {
+        var packetsSinceMeasurement = 0;
+        var lastSendDuration = TimeSpan.Zero;
         try
         {
             await foreach (var packet in reader.ReadAllAsync(cancellationToken).ConfigureAwait(false))
             {
-                var client = _sessionClient;
-                if (client is null)
-                    break;
-
                 var transport = _udpTransport
                     ?? throw new InvalidOperationException("The direct UDP transport is unavailable. Audio was not sent.");
-                await transport.SendAudioToConnectedPeersAsync(
+                var stopwatch = Stopwatch.StartNew();
+                var connectedPeers = await transport.SendAudioToConnectedPeersAsync(
                     packet.Payload, packet.Sequence, cancellationToken).ConfigureAwait(false);
+                stopwatch.Stop();
+                if (connectedPeers.Count == 0)
+                {
+                    packetsSinceMeasurement = 0;
+                    continue;
+                }
+                lastSendDuration = stopwatch.Elapsed;
+
+                if (++packetsSinceMeasurement < 10)
+                    continue;
+
+                packetsSinceMeasurement = 0;
+                var queueDepth = reader.CanCount ? reader.Count : 0;
+                var bitrate = _bitrateController.Evaluate(
+                    queueDepth,
+                    PacketQueueCapacity,
+                    Interlocked.Read(ref _droppedPacketCount),
+                    lastSendDuration);
+                Volatile.Write(ref _requestedBitrate, bitrate);
+                NotifyOnUi(() => CurrentBitrate = bitrate);
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -395,44 +539,70 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
     {
         try
         {
+            var volume = (float)(ShareVolume / 100d);
             var samples = frame.Samples.Span;
-            var peak = 0f;
-            foreach (var sample in samples)
-                peak = Math.Max(peak, Math.Abs(sample));
+            AudioFrame encodeFrame = frame;
+            if (volume < 0.9999f)
+            {
+                var scaled = new float[samples.Length];
+                for (var index = 0; index < samples.Length; index++)
+                    scaled[index] = samples[index] * volume;
+                encodeFrame = new AudioFrame(scaled, frame.Format, frame.CapturedAtUtc);
+                samples = encodeFrame.Samples.Span;
+            }
 
-            var level = peak * 100d;
-            NotifyOnUi(() => OutputLevel = level);
+            var level = AudioLevelMeter.Measure(samples);
+            var now = Stopwatch.GetTimestamp();
+            var previous = Interlocked.Read(ref _lastMeterUpdateTimestamp);
+            if (Stopwatch.GetElapsedTime(previous, now) >= TimeSpan.FromMilliseconds(33) &&
+                Interlocked.CompareExchange(ref _lastMeterUpdateTimestamp, now, previous) == previous)
+            {
+                NotifyOnUi(() =>
+                {
+                    OutputLevel = level.PeakPercent;
+                    OutputRmsLevel = level.RmsPercent;
+                });
+            }
 
             var encoder = _encoder;
             var channel = _packetChannel;
             if (encoder is null || channel is null)
                 return;
 
-            foreach (var packet in encoder.Encode(frame))
+            var requestedBitrate = Volatile.Read(ref _requestedBitrate);
+            if (encoder.Bitrate != requestedBitrate)
+                encoder.SetBitrate(requestedBitrate);
+
+            foreach (var packet in encoder.Encode(encodeFrame))
             {
                 var sequence = Interlocked.Increment(ref _packetSequence);
-                channel.Writer.TryWrite(new EncodedAudioPacket(packet, sequence));
+                if (!channel.Writer.TryWrite(new EncodedAudioPacket(packet, sequence)))
+                    Interlocked.Increment(ref _droppedPacketCount);
             }
         }
-        catch (Exception exception)
-        {
-            OnCaptureFaulted(exception);
-        }
+        catch (Exception exception) { OnCaptureFaulted(exception); }
     }
 
     private void OnSelectedSourceGainChanged(object? sender, EventArgs e)
     {
         if (sender is not AudioSourceItemViewModel item || _captureSession is null || !IsCapturing)
             return;
-
         try { _captureSession.SetGain(item.Source.Id, item.EffectiveGain); }
-        catch (Exception exception) { StatusMessage = $"Couldn't update volume: {exception.Message}"; }
+        catch (KeyNotFoundException)
+        {
+            // A source is being swapped; the next source reconciliation applies its gain.
+        }
+        catch (Exception exception) { NotifyOnUi(() => StatusMessage = $"Couldn't update volume: {exception.Message}"); }
     }
 
     private void OnApplicationSourcePropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName == nameof(AudioSourceItemViewModel.IsSelected))
+        {
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SelectedApplicationCount)));
+            if (IsCapturing && IsApplicationMode)
+                _ = ApplySelectedSourcesAsync();
+        }
     }
 
     private void OnCaptureFaulted(Exception exception)
@@ -451,25 +621,40 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
         => NotifyOnUi(() => StatusMessage = $"A secure peer link has been established with {peerConnectionId}; direct UDP connectivity is being checked.");
 
     private void OnDirectPeerConnected(string peerConnectionId, System.Net.IPEndPoint endpoint)
-        => NotifyOnUi(() => StatusMessage = $"Secure direct UDP audio connection established with peer {peerConnectionId}. Audio is flowing directly.");
+        => NotifyOnUi(() =>
+        {
+            Participants.FirstOrDefault(item => string.Equals(item.ConnectionId, peerConnectionId, StringComparison.Ordinal))
+                ?.SetDirectConnection(true);
+            StatusMessage = $"Secure direct UDP audio connection established with peer {peerConnectionId}. Audio is flowing directly.";
+        });
 
     private void OnPeerConnectionAttemptStarted(string peerConnectionId)
         => NotifyOnUi(() => StatusMessage = $"Negotiating direct UDP with listener {peerConnectionId}…");
 
     private void OnPeerConnectionFailed(string peerConnectionId, string reason)
-        => NotifyOnUi(() => StatusMessage = $"Listener {peerConnectionId} is not reachable over direct UDP. {reason}");
+        => NotifyOnUi(() =>
+        {
+            Participants.FirstOrDefault(item => string.Equals(item.ConnectionId, peerConnectionId, StringComparison.Ordinal))
+                ?.SetConnectionFailure("Direct UDP connection failed");
+            StatusMessage = $"Listener {peerConnectionId} is not reachable over direct UDP. {reason}";
+        });
 
     private void OnParticipantJoined(SessionParticipant participant)
         => NotifyOnUi(() =>
         {
-            ParticipantCount++;
+            if (!Participants.Any(item => item.ConnectionId == participant.ConnectionId))
+                Participants.Add(new ParticipantItemViewModel(participant));
+            ParticipantCount = Participants.Count;
             StatusMessage = $"{participant.DisplayName} joined your session.";
         });
 
     private void OnParticipantLeft(SessionParticipant participant)
         => NotifyOnUi(() =>
         {
-            ParticipantCount = Math.Max(1, ParticipantCount - 1);
+            var item = Participants.FirstOrDefault(candidate => candidate.ConnectionId == participant.ConnectionId);
+            if (item is not null && !item.IsHost)
+                Participants.Remove(item);
+            ParticipantCount = Math.Max(1, Participants.Count);
             StatusMessage = $"{participant.DisplayName} left your session.";
         });
 
@@ -482,7 +667,7 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
 
     private void NotifyOnUi(Action action)
     {
-        var dispatcher = Application.Current?.Dispatcher;
+        var dispatcher = System.Windows.Application.Current?.Dispatcher;
         if (dispatcher is null || dispatcher.CheckAccess())
             action();
         else
@@ -491,8 +676,10 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
 
     private async Task CleanupSessionAsync()
     {
+        await _sourceSwitchLock.WaitAsync();
+        try
+        {
         Exception? cleanupError = null;
-
         var captureSession = _captureSession;
         _captureSession = null;
         if (captureSession is not null)
@@ -521,7 +708,6 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
                 try { await _streamTask.ConfigureAwait(false); }
                 catch (Exception exception) when (exception is OperationCanceledException or ObjectDisposedException) { }
             }
-
             streamCancellation.Dispose();
         }
         _streamTask = null;
@@ -541,7 +727,6 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
 
         _peerCandidates?.Dispose();
         _peerCandidates = null;
-
         _peerNegotiation?.Dispose();
         _peerNegotiation = null;
 
@@ -559,6 +744,11 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
 
         if (cleanupError is not null)
             throw cleanupError;
+        }
+        finally
+        {
+            _sourceSwitchLock.Release();
+        }
     }
 
     private void RefreshCommands()
@@ -572,7 +762,6 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
     {
         if (EqualityComparer<T>.Default.Equals(field, value))
             return false;
-
         field = value;
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
         return true;
@@ -584,15 +773,12 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
 public sealed class AsyncRelayCommand(Func<Task> execute, Func<bool>? canExecute = null) : ICommand
 {
     private bool _isExecuting;
-
     public event EventHandler? CanExecuteChanged;
     public bool CanExecute(object? parameter) => !_isExecuting && (canExecute?.Invoke() ?? true);
-
     public async void Execute(object? parameter)
     {
         if (!CanExecute(parameter))
             return;
-
         _isExecuting = true;
         RaiseCanExecuteChanged();
         try { await execute(); }
@@ -602,6 +788,5 @@ public sealed class AsyncRelayCommand(Func<Task> execute, Func<bool>? canExecute
             RaiseCanExecuteChanged();
         }
     }
-
     public void RaiseCanExecuteChanged() => CanExecuteChanged?.Invoke(this, EventArgs.Empty);
 }

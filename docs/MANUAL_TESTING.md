@@ -4,7 +4,7 @@ This guide covers the direct-only media implementation. SignalR is used for sign
 
 ## 1. Get the Windows desktop package
 
-After a successful Windows CI run, open the repository's **Actions** tab, select the latest successful `.NET` workflow for this feature branch, and download the `ListenTogether-win-x64` artifact. Extract it and run `ListenTogether.App.exe`.
+After a successful Windows CI run, open the repository's **Actions** tab, select the latest successful `.NET` workflow on `master`, and download the `ListenTogether-win-x64` artifact. Extract it and run `ListenTogether.App.exe`.
 
 The same workflow also publishes a `ListenTogether-Relay-win-x64` artifact if you want to run the signalling/STUN server outside Docker. Artifacts are retained by GitHub Actions for 14 days.
 
@@ -62,7 +62,22 @@ A home PC behind a typical NAT is not a publicly reachable server just because D
 - If the UDP path goes stale, the next keepalive detects it and the UI shows a new direct-connection attempt; if that attempt fails, it displays the reason. Audio remains direct-only and is not relayed.
 - STUN discovery and direct media are IPv4-only at this stage.
 
-## 7. Automated verification
+## 7. Audio controls and desktop experience
+
+1. In the host's audio-source window, refresh the audio devices and applications.
+2. Select a non-default output device in system-audio mode, start sharing and verify that the selected device is captured.
+3. While sharing, change the selected output device. Confirm that capture switches without ending the listening session.
+4. Switch to selected-application mode. Select two applications, then add and remove an application while sharing. Existing sources should continue uninterrupted.
+5. Adjust each application's volume and mute state while sharing. Adjust the shared-mix volume and confirm the host peak/RMS meters respond.
+6. Join from a listener. Change the listener's playback device while audio is playing; the session and direct UDP connection should remain active.
+7. Adjust listener-local volume and mute. These controls must not change the host's shared mix or other listeners' volume.
+8. Confirm that the listener peak/RMS meters respond to incoming audio.
+9. Confirm that the participant list updates when listeners join and leave, and that each participant's direct UDP state changes after peer negotiation.
+10. Minimise the main window and confirm it moves to the notification area. Restore it by double-clicking the tray icon. Use the tray menu's Exit command to fully close the app.
+11. Confirm that participant join/leave and direct-connection failure notifications appear in the Windows notification area.
+12. Observe the displayed Opus bitrate during streaming. It should adapt conservatively when the local send queue is congested and recover gradually when the queue is healthy. This first implementation uses local queue pressure rather than receiver-reported network loss.
+
+## 8. Automated verification
 
 Run the full test suite from the repository root:
 

@@ -115,7 +115,17 @@ public sealed class UdpPeerTransportCoordinatorTests
         Assert.True(connected.Wait(TimeSpan.FromSeconds(5)));
 
         var payload = new byte[] { 0xF8, 0xFF, 0xFE, 0x01 };
-        var sent = await hostTransport.SendAudioToConnectedPeersAsync(payload, 7);
+        IReadOnlyCollection<string> sent = [];
+        // UDP is intentionally unacknowledged. Exercise the same continuous-packet
+        // behaviour as the live sender instead of assuming one datagram cannot be lost.
+        for (long sequence = 7; sequence < 57 &&
+             (!firstAudio.Task.IsCompleted || !secondAudio.Task.IsCompleted); sequence++)
+        {
+            sent = await hostTransport.SendAudioToConnectedPeersAsync(payload, sequence);
+            if (!firstAudio.Task.IsCompleted || !secondAudio.Task.IsCompleted)
+                await Task.Delay(20);
+        }
+
         Assert.Contains("listener-one", sent);
         Assert.Contains("listener-two", sent);
         Assert.Equal(payload, await firstAudio.Task.WaitAsync(TimeSpan.FromSeconds(5)));

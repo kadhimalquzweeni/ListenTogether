@@ -38,7 +38,7 @@ public partial class AudioSourceWindow : Window
             return;
 
         var details = $"ListenTogether invite\nServer: {_serverUri.ToString().TrimEnd('/')}\nInvite code: {_viewModel.SessionCode}";
-        Clipboard.SetText(details);
+        System.Windows.Clipboard.SetText(details);
     }
 
     private async void OnClosed(object? sender, EventArgs e)

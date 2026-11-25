@@ -49,11 +49,11 @@ jobs:
           if-no-files-found: error
           retention-days: 14
       - name: Publish Windows relay server
-        run: dotnet publish src/ListenTogether.Server/ListenTogether.Server.csproj --configuration Release --runtime win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true --output artifacts/relay-server
+        run: dotnet publish src/ListenTogether.Server/ListenTogether.Server.csproj --configuration Release --runtime win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true --output artifacts/server
       - name: Package Windows relay server
         shell: pwsh
         run: |
-          Compress-Archive -Path artifacts/relay-server/* -DestinationPath artifacts/release/ListenTogether-Relay-win-x64.zip -Force
+          Compress-Archive -Path artifacts/server/* -DestinationPath artifacts/release/ListenTogether-Relay-win-x64.zip -Force
       - name: Upload Windows relay server package
         uses: actions/upload-artifact@v4
         with:
