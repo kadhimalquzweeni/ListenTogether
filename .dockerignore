@@ -1,0 +1,12 @@
+.git
+.github
+.vs
+**/bin
+**/obj
+**/.vs
+TestResults
+*.user
+*.suo
+
+artifacts
+.env

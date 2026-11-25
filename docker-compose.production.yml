@@ -1,0 +1,34 @@
+services:
+  listen-together-relay:
+    build:
+      context: .
+      dockerfile: src/ListenTogether.Server/Dockerfile
+    environment:
+      ASPNETCORE_URLS: http://+:8080
+      ASPNETCORE_ENVIRONMENT: Production
+    expose:
+      - "8080"
+    ports:
+      - "3478:3478/udp"
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2
+    environment:
+      LISTENTOGETHER_DOMAIN: ${LISTENTOGETHER_DOMAIN:?Set LISTENTOGETHER_DOMAIN in .env}
+      ACME_EMAIL: ${ACME_EMAIL:?Set ACME_EMAIL in .env}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - listen-together-relay
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:

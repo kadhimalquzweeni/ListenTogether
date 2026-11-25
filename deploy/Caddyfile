@@ -1,0 +1,7 @@
+{
+    email {$ACME_EMAIL}
+}
+
+{$LISTENTOGETHER_DOMAIN} {
+    reverse_proxy listen-together-relay:8080
+}
