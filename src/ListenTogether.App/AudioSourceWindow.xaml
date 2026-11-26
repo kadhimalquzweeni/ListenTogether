@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="clr-namespace:ListenTogether.App"
         Title="Choose audio sources — ListenTogether"
-        Width="1120" Height="900" MinWidth="900" MinHeight="760"
+        Width="960" Height="760" MinWidth="820" MinHeight="640"
         WindowStartupLocation="CenterOwner"
         Background="{StaticResource WindowBackgroundBrush}"
         Foreground="{StaticResource TextPrimaryBrush}">
@@ -159,17 +159,20 @@
         </Style>
     </Window.Resources>
 
-    <Grid Margin="28">
+    <Grid Margin="30">
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
-        <Grid Grid.Row="0" Margin="0,0,0,20">
-            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-            <StackPanel>
+
+        <Grid Grid.Row="0" Margin="0,0,0,24">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel Grid.Column="0">
                 <TextBlock Text="Choose your audio" FontSize="27" FontWeight="SemiBold" />
                 <TextBlock Text="Select exactly what you want everyone in your session to hear."
                            FontSize="13" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,7,0,0" />
@@ -177,167 +180,143 @@
             <Button Grid.Column="1" Content="✕" Style="{StaticResource SmallActionButton}" Width="38" Height="36"
                     HorizontalAlignment="Right" VerticalAlignment="Top" Click="OnCloseClick" />
         </Grid>
-        <Grid Grid.Row="1" Margin="0,0,0,16">
-            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="14" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+
+        <Grid Grid.Row="1" Margin="0,0,0,20">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="14" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
             <RadioButton Grid.Column="0" GroupName="SourceMode" Style="{StaticResource ModeRadio}"
-                         Content="All system audio" Tag="Everything played through your selected output device."
+                         Content="All system audio" Tag="Everything played through your default output device."
                          IsChecked="{Binding IsSystemAudioMode}" IsEnabled="{Binding CanEditSources}" />
             <RadioButton Grid.Column="2" GroupName="SourceMode" Style="{StaticResource ModeRadio}"
                          Content="Selected applications" Tag="Choose multiple apps and control each one separately."
-                         IsChecked="{Binding IsSystemAudioMode, Converter={StaticResource InverseBooleanConverter}}"
-                         IsEnabled="{Binding CanEditSources}" />
+                         IsChecked="{Binding IsSystemAudioMode, Converter={StaticResource InverseBooleanConverter}}" IsEnabled="{Binding CanEditSources}" />
         </Grid>
+
         <Border Grid.Row="2" Background="{StaticResource PanelBackgroundBrush}" BorderBrush="#303541"
-                BorderThickness="1" CornerRadius="12" Padding="16" Margin="0,0,0,16">
+                BorderThickness="1" CornerRadius="14" Padding="20">
             <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="1.2*" /><ColumnDefinition Width="24" />
-                    <ColumnDefinition Width="1.5*" /><ColumnDefinition Width="24" />
-                    <ColumnDefinition Width="1.2*" />
-                </Grid.ColumnDefinitions>
-                <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                    <TextBlock Text="Capture device" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" />
-                    <ComboBox ItemsSource="{Binding OutputDevices}" SelectedItem="{Binding SelectedOutputDevice}"
-                              DisplayMemberPath="Name" Margin="0,7,0,0" Padding="10,7"
-                              Background="#191C24" Foreground="{StaticResource TextPrimaryBrush}"
-                              IsEnabled="{Binding CanEditSources}"
-                              ToolTip="Choose the device to capture for system audio." />
-                </StackPanel>
-                <StackPanel Grid.Column="2" VerticalAlignment="Center">
-                    <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                        <TextBlock Text="Shared mix volume" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" />
-                        <TextBlock Grid.Column="1" Text="{Binding ShareVolume, StringFormat={}{0:0}%}" FontSize="11" />
-                    </Grid>
-                    <Slider Style="{StaticResource VolumeSlider}" Minimum="0" Maximum="100"
-                            Value="{Binding ShareVolume, UpdateSourceTrigger=PropertyChanged}" Margin="0,5,0,0" />
-                    <TextBlock Text="Applied to the complete mix sent to listeners" FontSize="10"
-                               Foreground="{StaticResource TextSecondaryBrush}" />
-                </StackPanel>
-                <StackPanel Grid.Column="4" VerticalAlignment="Center">
-                    <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                        <TextBlock Text="Input level" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" />
-                        <TextBlock Grid.Column="1" Text="{Binding OutputLevel, StringFormat={}{0:0}%}" FontSize="11" />
-                    </Grid>
-                    <ProgressBar Minimum="0" Maximum="100" Value="{Binding OutputLevel}" Height="8"
-                                 Background="#343B4A" Foreground="{StaticResource AccentBrush}" Margin="0,7,0,5" />
-                    <ProgressBar Minimum="0" Maximum="100" Value="{Binding OutputRmsLevel}" Height="5"
-                                 Background="#343B4A" Foreground="#7186B8" />
-                </StackPanel>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <Grid Grid.Row="0" Margin="0,0,0,14">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0">
+                        <TextBlock Text="{Binding AvailableApplicationCount, StringFormat={}{0} applications available}"
+                                   FontSize="15" FontWeight="SemiBold" />
+                        <TextBlock Text="Select the applications to include in the shared mix."
+                                   Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" Margin="0,5,0,0" />
+                    </StackPanel>
+                    <Button Grid.Column="1" Content="Refresh" Command="{Binding RefreshCommand}"
+                            Style="{StaticResource SmallActionButton}" HorizontalAlignment="Right"
+                            IsEnabled="{Binding CanEditSources}" />
+                </Grid>
+
+                <Grid Grid.Row="1">
+                    <StackPanel Visibility="{Binding IsSystemAudioMode, Converter={StaticResource BooleanToVisibilityConverter}}">
+                        <Border Background="#191C24" CornerRadius="10" Padding="18">
+                            <StackPanel>
+                                <TextBlock Text="System output" FontWeight="SemiBold" FontSize="15" />
+                                <TextBlock Text="All audio from your PC's default playback device will be captured."
+                                           Foreground="{StaticResource TextSecondaryBrush}" FontSize="12"
+                                           TextWrapping="Wrap" Margin="0,7,0,0" />
+                            </StackPanel>
+                        </Border>
+                        <Grid Margin="0,22,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="100" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="48" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="Volume" VerticalAlignment="Center" FontSize="12" />
+                            <Slider Grid.Column="1" Style="{StaticResource VolumeSlider}" Minimum="0" Maximum="100"
+                                    Value="{Binding SystemAudioSource.Volume, UpdateSourceTrigger=PropertyChanged}" />
+                            <TextBlock Grid.Column="2" Text="{Binding SystemAudioSource.Volume, StringFormat={}{0:0}%}"
+                                       Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center"
+                                       HorizontalAlignment="Right" FontSize="12" />
+                            <CheckBox Grid.Column="3" Content="Mute" Style="{StaticResource SourceCheckBox}"
+                                      IsChecked="{Binding SystemAudioSource.IsMuted}" Margin="14,0,0,0" />
+                        </Grid>
+                    </StackPanel>
+
+                    <StackPanel Visibility="{Binding IsApplicationMode, Converter={StaticResource BooleanToVisibilityConverter}}">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                            <ItemsControl ItemsSource="{Binding ApplicationSources}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Background="#191C24" CornerRadius="9" Padding="14" Margin="0,0,0,8">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="28" />
+                                                    <ColumnDefinition Width="190" />
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="48" />
+                                                    <ColumnDefinition Width="58" />
+                                                </Grid.ColumnDefinitions>
+                                                <CheckBox Grid.Column="0" Style="{StaticResource SourceCheckBox}"
+                                                          IsChecked="{Binding IsSelected}"
+                                                          IsEnabled="{Binding DataContext.CanEditSources, RelativeSource={RelativeSource AncestorType=Window}}" />
+                                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                                    <TextBlock Text="{Binding DisplayName}" FontSize="13" FontWeight="SemiBold"
+                                                               TextTrimming="CharacterEllipsis" />
+                                                    <TextBlock Text="{Binding ProcessId, StringFormat=PID {0}}"
+                                                               FontSize="10" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,3,0,0" />
+                                                </StackPanel>
+                                                <Slider Grid.Column="2" Style="{StaticResource VolumeSlider}" Minimum="0" Maximum="100"
+                                                        IsEnabled="{Binding IsSelected}"
+                                                        Value="{Binding Volume, UpdateSourceTrigger=PropertyChanged}" />
+                                                <TextBlock Grid.Column="3" Text="{Binding Volume, StringFormat={}{0:0}%}"
+                                                           FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"
+                                                           VerticalAlignment="Center" HorizontalAlignment="Right" />
+                                                <CheckBox Grid.Column="4" Content="Mute" Style="{StaticResource SourceCheckBox}"
+                                                          IsEnabled="{Binding IsSelected}" IsChecked="{Binding IsMuted}"
+                                                          HorizontalAlignment="Right" />
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                    </StackPanel>
+                </Grid>
             </Grid>
         </Border>
-        <Grid Grid.Row="3">
-            <Grid.ColumnDefinitions><ColumnDefinition Width="2.1*" /><ColumnDefinition Width="16" /><ColumnDefinition Width="1*" /></Grid.ColumnDefinitions>
-            <Border Grid.Column="0" Background="{StaticResource PanelBackgroundBrush}" BorderBrush="#303541"
-                    BorderThickness="1" CornerRadius="14" Padding="18">
-                <Grid>
-                    <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
-                    <Grid Grid.Row="0" Margin="0,0,0,14">
-                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                        <StackPanel>
-                            <TextBlock Text="{Binding AvailableApplicationCount, StringFormat={}{0} applications available}" FontSize="15" FontWeight="SemiBold" />
-                            <TextBlock Text="Select the sources to include in the shared mix." Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" Margin="0,5,0,0" />
-                        </StackPanel>
-                        <Button Grid.Column="1" Content="Refresh" Command="{Binding RefreshCommand}" Style="{StaticResource SmallActionButton}" IsEnabled="{Binding CanEditSources}" />
-                    </Grid>
-                    <Grid Grid.Row="1">
-                        <StackPanel Visibility="{Binding IsSystemAudioMode, Converter={StaticResource BooleanToVisibilityConverter}}">
-                            <Border Background="#191C24" CornerRadius="10" Padding="18">
-                                <StackPanel>
-                                    <TextBlock Text="System output" FontWeight="SemiBold" FontSize="15" />
-                                    <TextBlock Text="All audio from the selected playback device will be captured."
-                                               Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" TextWrapping="Wrap" Margin="0,7,0,0" />
-                                </StackPanel>
-                            </Border>
-                            <Grid Margin="0,22,0,0">
-                                <Grid.ColumnDefinitions><ColumnDefinition Width="100" /><ColumnDefinition Width="*" /><ColumnDefinition Width="48" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                                <TextBlock Text="Source volume" VerticalAlignment="Center" FontSize="12" />
-                                <Slider Grid.Column="1" Style="{StaticResource VolumeSlider}" Minimum="0" Maximum="100"
-                                        Value="{Binding SystemAudioSource.Volume, UpdateSourceTrigger=PropertyChanged}" />
-                                <TextBlock Grid.Column="2" Text="{Binding SystemAudioSource.Volume, StringFormat={}{0:0}%}"
-                                           Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center" HorizontalAlignment="Right" FontSize="12" />
-                                <CheckBox Grid.Column="3" Content="Mute" Style="{StaticResource SourceCheckBox}"
-                                          IsChecked="{Binding SystemAudioSource.IsMuted}" Margin="14,0,0,0" />
-                            </Grid>
-                        </StackPanel>
-                        <StackPanel Visibility="{Binding IsApplicationMode, Converter={StaticResource BooleanToVisibilityConverter}}">
-                            <ScrollViewer VerticalScrollBarVisibility="Auto">
-                                <ItemsControl ItemsSource="{Binding ApplicationSources}">
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate>
-                                            <Border Background="#191C24" CornerRadius="9" Padding="14" Margin="0,0,0,8">
-                                                <Grid>
-                                                    <Grid.ColumnDefinitions><ColumnDefinition Width="28" /><ColumnDefinition Width="190" /><ColumnDefinition Width="*" /><ColumnDefinition Width="48" /><ColumnDefinition Width="58" /></Grid.ColumnDefinitions>
-                                                    <CheckBox Grid.Column="0" Style="{StaticResource SourceCheckBox}" IsChecked="{Binding IsSelected}"
-                                                              IsEnabled="{Binding DataContext.CanEditSources, RelativeSource={RelativeSource AncestorType=Window}}" />
-                                                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                                        <TextBlock Text="{Binding DisplayName}" FontSize="13" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-                                                        <TextBlock Text="{Binding ProcessId, StringFormat=PID {0}}" FontSize="10" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,3,0,0" />
-                                                    </StackPanel>
-                                                    <Slider Grid.Column="2" Style="{StaticResource VolumeSlider}" Minimum="0" Maximum="100"
-                                                            IsEnabled="{Binding IsSelected}" Value="{Binding Volume, UpdateSourceTrigger=PropertyChanged}" />
-                                                    <TextBlock Grid.Column="3" Text="{Binding Volume, StringFormat={}{0:0}%}" FontSize="11"
-                                                               Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center" HorizontalAlignment="Right" />
-                                                    <CheckBox Grid.Column="4" Content="Mute" Style="{StaticResource SourceCheckBox}"
-                                                              IsEnabled="{Binding IsSelected}" IsChecked="{Binding IsMuted}" HorizontalAlignment="Right" />
-                                                </Grid>
-                                            </Border>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
-                            </ScrollViewer>
-                        </StackPanel>
-                    </Grid>
-                </Grid>
-            </Border>
-            <Border Grid.Column="2" Background="{StaticResource PanelBackgroundBrush}" BorderBrush="#303541"
-                    BorderThickness="1" CornerRadius="14" Padding="18">
-                <Grid>
-                    <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
-                    <StackPanel Grid.Row="0" Margin="0,0,0,14">
-                        <TextBlock Text="Session participants" FontSize="15" FontWeight="SemiBold" />
-                        <TextBlock Text="{Binding ParticipantCount, StringFormat={}{0} people in this session}" FontSize="11"
-                                   Foreground="{StaticResource TextSecondaryBrush}" Margin="0,5,0,0" />
-                    </StackPanel>
-                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
-                        <ItemsControl ItemsSource="{Binding Participants}">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <Border Background="#191C24" CornerRadius="9" Padding="12" Margin="0,0,0,8">
-                                        <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="28" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                            <Border Width="22" Height="22" CornerRadius="11" Background="#2A3044" VerticalAlignment="Top">
-                                                <TextBlock Text="●" FontSize="9" Foreground="{StaticResource AccentBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                            </Border>
-                                            <StackPanel Grid.Column="1">
-                                                <TextBlock Text="{Binding DisplayName}" FontSize="12" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-                                                <TextBlock Text="{Binding ConnectionStatus}" FontSize="10" Foreground="{StaticResource TextSecondaryBrush}"
-                                                           Margin="0,4,0,0" TextWrapping="Wrap" />
-                                            </StackPanel>
-                                        </Grid>
-                                    </Border>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                    </ScrollViewer>
-                    <TextBlock Grid.Row="2" Text="Audio is sent directly to connected peers. No relay is used."
-                               FontSize="10" Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="0,10,0,0" />
-                </Grid>
-            </Border>
-        </Grid>
-        <Grid Grid.Row="4" Margin="0,16,0,0">
-            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="12" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="12" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+
+        <Grid Grid.Row="3" Margin="0,18,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="12" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="12" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="12" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
             <StackPanel VerticalAlignment="Center">
-                <TextBlock Text="{Binding StatusMessage}" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap" MaxWidth="440" />
-                <WrapPanel Margin="0,5,0,0">
-                    <TextBlock Text="{Binding SessionCode, StringFormat={}Invite code: {0}}" FontSize="12" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" />
-                    <TextBlock Text="   •   " FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" />
-                    <TextBlock Text="{Binding CurrentBitrate, StringFormat={}{0:N0} bps}" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" />
-                    <TextBlock Text="   •   " FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" />
-                    <TextBlock Text="{Binding DroppedPacketCount, StringFormat={}{0} dropped packets}" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" />
-                </WrapPanel>
+                <TextBlock Text="{Binding StatusMessage}" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"
+                           TextWrapping="Wrap" MaxWidth="480" />
+                <TextBlock Text="{Binding OutputLevel, StringFormat=Output level  •  {0:0}%}"
+                           FontSize="10" Foreground="#7F8AA2" Margin="0,5,0,0" />
+                <TextBlock Text="{Binding SessionCode, StringFormat={}Invite code: {0}}" FontSize="12"
+                           Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" Margin="0,5,0,0" />
+                <TextBlock Text="{Binding ParticipantCount, StringFormat={}Listeners: {0}}" FontSize="10"
+                           Foreground="{StaticResource TextSecondaryBrush}" Margin="0,3,0,0" />
             </StackPanel>
-            <Button Grid.Column="1" Content="Copy invite details" Click="OnCopyCodeClick" Style="{StaticResource SecondaryButton}" IsEnabled="{Binding HasSessionCode}" />
-            <Button Grid.Column="3" Content="Stop sharing" Command="{Binding StopCommand}" Style="{StaticResource SecondaryButton}" IsEnabled="{Binding IsCapturing}" />
-            <Button Grid.Column="5" Content="Start sharing" Command="{Binding StartCommand}" Style="{StaticResource PrimaryButton}" IsEnabled="{Binding CanStart}" />
+            <Button Grid.Column="1" Content="Copy invite details" Click="OnCopyCodeClick"
+                    Style="{StaticResource SecondaryButton}" IsEnabled="{Binding HasSessionCode}" />
+            <Button Grid.Column="3" Content="Stop sharing" Command="{Binding StopCommand}"
+                    Style="{StaticResource SecondaryButton}" IsEnabled="{Binding IsCapturing}" />
+            <Button Grid.Column="7" Content="Start sharing" Command="{Binding StartCommand}"
+                    Style="{StaticResource PrimaryButton}" IsEnabled="{Binding CanStart}" />
         </Grid>
     </Grid>
 </Window>
