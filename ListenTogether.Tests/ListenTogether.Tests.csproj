@@ -19,9 +19,9 @@
     </PackageReference>
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\src\ListenTogether.Core\ListenTogether.Core.csproj" />
-    <ProjectReference Include="..\..\src\ListenTogether.App\ListenTogether.App.csproj" />
-    <ProjectReference Include="..\..\src\ListenTogether.Infrastructure\ListenTogether.Infrastructure.csproj" />
-    <ProjectReference Include="..\..\src\ListenTogether.Server\ListenTogether.Server.csproj" />
+    <ProjectReference Include="..\ListenTogether.Core\ListenTogether.Core.csproj" />
+    <ProjectReference Include="..\ListenTogether.App\ListenTogether.App.csproj" />
+    <ProjectReference Include="..\ListenTogether.Infrastructure\ListenTogether.Infrastructure.csproj" />
+    <ProjectReference Include="..\ListenTogether.Server\ListenTogether.Server.csproj" />
   </ItemGroup>
 </Project>

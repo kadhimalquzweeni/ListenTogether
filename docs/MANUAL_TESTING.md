@@ -82,9 +82,9 @@ A home PC behind a typical NAT is not a publicly reachable server just because D
 Run the full test suite from the repository root:
 
 ```powershell
-dotnet restore ListenTogether.sln
-dotnet build ListenTogether.sln --configuration Release --no-restore
-dotnet test ListenTogether.sln --configuration Release --no-build --no-restore
+dotnet restore ListenTogether.slnx
+dotnet build ListenTogether.slnx --configuration Release --no-restore
+dotnet test ListenTogether.slnx --configuration Release --no-build --no-restore
 ```
 
 The networking tests include peer key negotiation, candidate exchange, authenticated UDP connectivity and audio, jitter-buffer ordering, failed-connectivity diagnostics and candidate-arrival retries.

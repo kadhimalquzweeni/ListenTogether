@@ -16,7 +16,7 @@ jobs:
         with:
           dotnet-version: 10.0.x
       - name: Restore
-        run: dotnet restore ListenTogether.sln
+        run: dotnet restore ListenTogether.slnx
       - name: Validate home-server PowerShell scripts
         shell: pwsh
         run: |
@@ -31,11 +31,11 @@ jobs:
             }
           }
       - name: Build
-        run: dotnet build ListenTogether.sln --configuration Release --no-restore
+        run: dotnet build ListenTogether.slnx --configuration Release --no-restore
       - name: Test
-        run: dotnet test ListenTogether.sln --configuration Release --no-build --no-restore
+        run: dotnet test ListenTogether.slnx --configuration Release --no-build --no-restore
       - name: Publish Windows desktop app
-        run: dotnet publish src/ListenTogether.App/ListenTogether.App.csproj --configuration Release --runtime win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true --output artifacts/desktop
+        run: dotnet publish ListenTogether.App/ListenTogether.App.csproj --configuration Release --runtime win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true --output artifacts/desktop
       - name: Package Windows desktop app
         shell: pwsh
         run: |
@@ -49,7 +49,7 @@ jobs:
           if-no-files-found: error
           retention-days: 14
       - name: Publish Windows relay server
-        run: dotnet publish src/ListenTogether.Server/ListenTogether.Server.csproj --configuration Release --runtime win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true --output artifacts/server
+        run: dotnet publish ListenTogether.Server/ListenTogether.Server.csproj --configuration Release --runtime win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true --output artifacts/server
       - name: Package Windows relay server
         shell: pwsh
         run: |
@@ -72,4 +72,4 @@ jobs:
           docker compose config --quiet
           docker compose -f docker-compose.production.yml config --quiet
       - name: Build relay container
-        run: docker build --file src/ListenTogether.Server/Dockerfile --tag listen-together-server:test .
+        run: docker build --file ListenTogether.Server/Dockerfile --tag listen-together-server:test .

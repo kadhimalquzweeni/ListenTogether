@@ -1,7 +1,7 @@
 <Solution>
-  <Project Path="src/ListenTogether.App/ListenTogether.App.csproj" />
-  <Project Path="src/ListenTogether.Core/ListenTogether.Core.csproj" />
-  <Project Path="src/ListenTogether.Infrastructure/ListenTogether.Infrastructure.csproj" />
-  <Project Path="tests/ListenTogether.Tests/ListenTogether.Tests.csproj" />
-  <Project Path="src/ListenTogether.Server/ListenTogether.Server.csproj" />
+  <Project Path="ListenTogether.App/ListenTogether.App.csproj" />
+  <Project Path="ListenTogether.Core/ListenTogether.Core.csproj" />
+  <Project Path="ListenTogether.Infrastructure/ListenTogether.Infrastructure.csproj" />
+  <Project Path="ListenTogether.Tests/ListenTogether.Tests.csproj" />
+  <Project Path="ListenTogether.Server/ListenTogether.Server.csproj" />
 </Solution>

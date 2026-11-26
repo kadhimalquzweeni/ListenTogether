@@ -25,13 +25,13 @@ jobs:
         with:
           dotnet-version: 10.0.x
       - name: Restore
-        run: dotnet restore ListenTogether.sln
+        run: dotnet restore ListenTogether.slnx
       - name: Build
-        run: dotnet build ListenTogether.sln --configuration Release --no-restore
+        run: dotnet build ListenTogether.slnx --configuration Release --no-restore
       - name: Test
-        run: dotnet test ListenTogether.sln --configuration Release --no-build --no-restore
+        run: dotnet test ListenTogether.slnx --configuration Release --no-build --no-restore
       - name: Publish desktop app
-        run: dotnet publish src/ListenTogether.App/ListenTogether.App.csproj --configuration Release --runtime win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true --output artifacts/publish
+        run: dotnet publish ListenTogether.App/ListenTogether.App.csproj --configuration Release --runtime win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true --output artifacts/publish
       - name: Package
         shell: pwsh
         run: |

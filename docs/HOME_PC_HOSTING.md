@@ -41,7 +41,7 @@ The script deliberately does not attempt to log in to or modify your router: rou
 
 Install Caddy 2.10 or later and ensure caddy.exe is on PATH. In the desktop app, enter your ACME email address and select **Start Server**. If the server executable is missing, ListenTogether automatically runs the equivalent of:
 
-    dotnet publish src/ListenTogether.Server/ListenTogether.Server.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o artifacts/server
+    dotnet publish ListenTogether.Server/ListenTogether.Server.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o artifacts/server
 
 The first start can take several minutes while the .NET SDK restores and publishes the server. You can also run the script directly from an elevated PowerShell window:
 

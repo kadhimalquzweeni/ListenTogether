@@ -2,7 +2,7 @@ services:
   listen-together-relay:
     build:
       context: .
-      dockerfile: src/ListenTogether.Server/Dockerfile
+      dockerfile: ListenTogether.Server/Dockerfile
     environment:
       ASPNETCORE_URLS: http://+:8080
       ASPNETCORE_ENVIRONMENT: Production

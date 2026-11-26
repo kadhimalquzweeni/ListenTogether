@@ -59,7 +59,7 @@ function Get-PublicIPv4 {
 }
 
 if (-not (Test-Path $ServerExe -PathType Leaf)) {
-    $serverProject = Join-Path $repoRoot "src\ListenTogether.Server\ListenTogether.Server.csproj"
+    $serverProject = Join-Path $repoRoot "ListenTogether.Server\ListenTogether.Server.csproj"
     if (-not (Test-Path $serverProject -PathType Leaf)) {
         throw "The server executable is missing and the server project could not be found: $serverProject"
     }
