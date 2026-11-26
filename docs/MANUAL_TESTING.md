@@ -1,14 +1,14 @@
 # Manual testing guide
 
-This guide covers the direct-only media implementation. SignalR is used for signalling only; audio requires an authenticated UDP path between every participant.
+This guide covers the direct-only media implementation. SignalR is used for session signalling and peer-key negotiation; audio requires an authenticated UDP path directly between participants.
 
 ## 1. Get the Windows desktop package
 
-After a successful Windows CI run, open the repository's **Actions** tab, select the latest successful `.NET` workflow on `master`, and download the `ListenTogether-win-x64` artifact. Extract it and run `ListenTogether.App.exe`.
+After a successful Windows CI run, open the repository's **Actions** tab, select the latest successful **.NET** workflow on `master`, and download the `ListenTogether-win-x64` artifact. Extract it and run `ListenTogether.App.exe`.
 
-The same workflow also publishes a `ListenTogether-Relay-win-x64` artifact if you want to run the signalling/STUN server outside Docker. Artifacts are retained by GitHub Actions for 14 days.
+The workflow also publishes a `ListenTogether-Relay-win-x64` artifact containing the Windows signalling/STUN server executable. The word "Relay" in that historical artifact name does not mean it relays audio. Artifacts are retained by GitHub Actions for 14 days.
 
-## 2. Build and start the development server
+## 2. Start a local development server
 
 From the repository root:
 
@@ -17,11 +17,12 @@ docker compose up --build
 ```
 
 The development server exposes:
-
-- TCP 5000 for the local development SignalR signalling endpoint (or TCP 443 for the public HTTPS endpoint).
+- TCP 5000 for the local HTTP signalling endpoint.
 - UDP 3478 for the STUN Binding service.
 
-For same-LAN testing, allow inbound TCP 5000 and UDP 3478 in the server PC's firewall. Find that PC's LAN IPv4 address and use `http://HOST-LAN-IP:5000` as the server URL on both desktop clients.
+For same-LAN testing, allow inbound TCP 5000 and UDP 3478 in the server PC's firewall. Find that PC's LAN IPv4 address and use `http://HOST-LAN-IP:5000` as the server URL on both desktop clients. Keep this HTTP endpoint on a trusted local network; use a properly configured HTTPS endpoint for internet testing.
+
+For the Windows home-hosting setup, follow [HOME_PC_HOSTING.md](HOME_PC_HOSTING.md) instead of Docker instructions.
 
 ## 3. Test two desktops on the same LAN
 
@@ -33,7 +34,7 @@ For same-LAN testing, allow inbound TCP 5000 and UDP 3478 in the server PC's fir
 6. On the listener desktop, enter the code and join.
 7. Play audio on the host PC.
 8. Check that the listener hears the audio.
-9. Both clients should report that a secure direct UDP connection has been established. If direct UDP cannot be established, the UI must report the failed stage/reason and retry; no audio should be relayed.
+9. Both clients should report that a secure direct UDP connection has been established. If direct UDP cannot be established, the UI should report the failed stage/reason and retry; no audio should be relayed.
 10. Leave the session and confirm that playback stops.
 
 ## 4. Test multiple listeners
@@ -50,16 +51,16 @@ The host sends Opus frames only over authenticated direct UDP paths. Listeners w
 
 For clients on different networks, the signalling server and STUN service must be publicly reachable.
 
-The supplied production Compose setup expects a DNS name and Caddy-managed HTTPS. It publishes UDP 3478 directly to the signalling/STUN server container. The public server firewall must allow TCP 80/443 and UDP 3478. Clients do not need inbound router rules or port forwarding.
+For the Windows home-PC setup, follow [HOME_PC_HOSTING.md](HOME_PC_HOSTING.md). For Docker production hosting, follow [DEPLOYMENT.md](DEPLOYMENT.md). The production Compose setup publishes UDP 3478 directly to the signalling/STUN server container and uses Caddy for HTTPS. The public firewall must allow TCP 80/443 and UDP 3478. Clients do not need inbound router rules or port forwarding.
 
-A home PC behind a typical NAT is not a publicly reachable server just because Docker is running. Without router forwarding, a tunnel, or a public hosting endpoint, remote clients will not be able to reach a server running only on that home PC. The direct UDP peer path does not remove this server reachability requirement.
+A home PC behind a typical NAT is not publicly reachable just because Docker is running. Without router forwarding or another public hosting endpoint, remote clients cannot reach a server running only on that home PC. The direct UDP peer path does not remove this server-reachability requirement.
 
 ## 6. Direct-connection failure behaviour
 
 - If STUN responds, the clients exchange local and server-reflexive candidates and attempt authenticated UDP connectivity checks.
 - If STUN times out but local interface candidates exist, same-LAN direct connectivity is still attempted.
 - If direct UDP cannot be established, the listener receives no audio and the UI displays a diagnostic.
-- If the UDP path goes stale, the next keepalive detects it and the UI shows a new direct-connection attempt; if that attempt fails, it displays the reason. Audio remains direct-only and is not relayed.
+- If the UDP path goes stale, keepalive checks detect it and the UI shows a new direct-connection attempt. Audio remains direct-only and is not relayed.
 - STUN discovery and direct media are IPv4-only at this stage.
 
 ## 7. Audio controls and desktop experience
@@ -73,9 +74,7 @@ A home PC behind a typical NAT is not a publicly reachable server just because D
 7. Adjust listener-local volume and mute. These controls must not change the host's shared mix or other listeners' volume.
 8. Confirm that the listener peak/RMS meters respond to incoming audio.
 9. Confirm that the participant list updates when listeners join and leave, and that each participant's direct UDP state changes after peer negotiation.
-10. Minimise the main window and confirm it moves to the notification area. Restore it by double-clicking the tray icon. Use the tray menu's Exit command to fully close the app.
-11. Confirm that participant join/leave and direct-connection failure notifications appear in the Windows notification area.
-12. Observe the displayed Opus bitrate during streaming. It should adapt conservatively when the local send queue is congested and recover gradually when the queue is healthy. This first implementation uses local queue pressure rather than receiver-reported network loss.
+10. Observe the displayed Opus bitrate during streaming. It should adapt conservatively when the local send queue is congested and recover gradually when the queue is healthy. This implementation uses local queue pressure rather than receiver-reported network loss.
 
 ## 8. Automated verification
 
