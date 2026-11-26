@@ -9,7 +9,7 @@ Use this checklist after building or installing the desktop app. It verifies the
 3. Open ListenTogether on the host PC. Set the server address and display name.
 4. Open ListenTogether on a second PC on the same network. Set its server address to the host PC's LAN address, for example `http://192.168.1.20:5000`. Allow inbound TCP port 5000 through the host firewall.
 
-For a single-PC test, launch two app instances and use the same local relay URL. Avoid testing **All system audio** with both instances on one PC: the listener's playback can be captured again by the host and create an audio feedback loop. Use a second PC for system-audio testing, or select an individual app on a single PC.
+For a single-PC test, launch two app instances and use the same local server URL. Avoid testing **All system audio** with both instances on one PC: the listener's playback can be captured again by the host and create an audio feedback loop. Use a second PC for system-audio testing, or select an individual app on a single PC.
 
 ## Individual application capture
 
