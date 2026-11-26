@@ -7,7 +7,7 @@ namespace ListenTogether.App.ViewModels;
 /// <summary>UI state for one participant in the current listening session.</summary>
 public sealed class ParticipantItemViewModel : INotifyPropertyChanged
 {
-    private string _connectionStatus = "Signalling connected";
+    private string _connectionStatus;
 
     public ParticipantItemViewModel(SessionParticipant participant)
     {
@@ -15,6 +15,9 @@ public sealed class ParticipantItemViewModel : INotifyPropertyChanged
         DisplayName = participant.DisplayName;
         IsHost = participant.IsHost;
         ConnectionId = participant.ConnectionId;
+        _connectionStatus = participant.IsHost
+            ? "Host · sharing from this PC"
+            : "Signalling connected · waiting for direct audio";
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;

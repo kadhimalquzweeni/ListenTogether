@@ -577,7 +577,10 @@ public sealed class AudioSourceViewModel : INotifyPropertyChanged, IAsyncDisposa
             {
                 var sequence = Interlocked.Increment(ref _packetSequence);
                 if (!channel.Writer.TryWrite(new EncodedAudioPacket(packet, sequence)))
+                {
                     Interlocked.Increment(ref _droppedPacketCount);
+                    NotifyOnUi(() => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(DroppedPacketCount))));
+                }
             }
         }
         catch (Exception exception) { OnCaptureFaulted(exception); }
