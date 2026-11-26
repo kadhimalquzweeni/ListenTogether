@@ -1,12 +1,27 @@
-# Signalling and STUN deployment
+# Deployment overview
 
-The desktop clients connect to the ListenTogether SignalR signalling service at:
+ListenTogether has two separate networking responsibilities:
 
-`https://your-domain.example/hubs/listening`
+- **Signalling and STUN:** the ASP.NET Core server coordinates sessions, exchanges peer connection candidates and supports peer-key negotiation. STUN helps clients discover their public UDP mappings.
+- **Audio:** audio is sent directly between participants over authenticated, encrypted UDP. The server does not receive, relay, forward or store audio. There is no TURN service or audio-relay fallback.
 
-The server handles session signalling, candidate exchange and peer-key negotiation only. It does not receive, forward or persist audio packets. The current server uses in-memory session state and is designed to run as a single instance.
+The signalling server keeps session state in memory and is intended to run as a single instance. Restarting it ends active sessions.
 
-## Local Docker
+## Choose a hosting method
+
+### Windows home PC (the maintained self-hosting setup)
+
+Use [HOME_PC_HOSTING.md](HOME_PC_HOSTING.md) to host the signalling and STUN services directly on a Windows PC.
+
+This is the setup used by the project's PowerShell scripts and desktop app's **Start Server** workflow. It uses Caddy on Windows to provide HTTPS with a short-lived Let's Encrypt certificate for the host's public IPv4 address. It does not require a domain name.
+
+The host needs a publicly reachable IPv4 address and router forwarding for TCP 80, TCP 443 and UDP 3478. The guide covers firewall setup, router configuration, startup, external testing and troubleshooting.
+
+### Docker Compose
+
+Docker Compose is an alternative for development or for hosting on a Linux server/VM. It is not required for the Windows home-PC setup.
+
+#### Local development
 
 From the repository root:
 
@@ -14,55 +29,42 @@ From the repository root:
 docker compose up --build
 ```
 
-The server listens on `http://localhost:5000` and publishes the STUN endpoint on UDP port `3478`. Use the HTTP address in the desktop app for local development.
+This starts the server with:
+- HTTP signalling on `http://localhost:5000`.
+- STUN on UDP port `3478`.
 
-## Same-network testing
+For same-LAN testing, allow inbound TCP 5000 and UDP 3478 through the host firewall and use `http://HOST-LAN-IP:5000` in both desktop clients. Keep this plain-HTTP endpoint on a trusted network; do not expose it directly to the public internet.
 
-1. Find the host PC's LAN IPv4 address.
-2. Allow inbound TCP port 5000 and UDP port 3478 in Windows Firewall.
-3. Start the signalling and STUN services with Docker Compose.
-4. Set the server address on both desktops to `http://HOST-LAN-IP:5000`.
-5. Create a session on one desktop and join from the other. The clients exchange UDP candidates and attempt a direct encrypted audio path. If that path cannot be established, audio continues through SignalR.
+#### Public Docker deployment
 
-Use HTTP only on a trusted local network. Do not expose this endpoint directly to the public internet.
+The production Compose file runs the signalling/STUN server behind Caddy.
 
-## Public HTTPS deployment with Caddy
-
-You need:
-- A Linux server or VM with Docker Engine and Docker Compose.
+Requirements:
+- Docker Engine and Docker Compose.
 - A DNS name pointing to the server.
-- Inbound TCP ports 80 and 443 available to Caddy.
-- Inbound UDP port 3478 available directly to the signalling/STUN server container for STUN.
+- TCP ports 80 and 443 available to Caddy.
+- UDP port 3478 reachable directly on the server for STUN.
+- Firewall rules allowing those ports.
 
-Copy `.env.example` to `.env` and set `LISTENTOGETHER_DOMAIN` to your public DNS name and `ACME_EMAIL` to an address for certificate notifications. Then run:
+Copy `.env.example` to `.env`, then set `LISTENTOGETHER_DOMAIN` and `ACME_EMAIL` to your domain and certificate-contact email. Start the stack:
 
 ```bash
 docker compose -f docker-compose.production.yml up --build -d
 ```
 
-Caddy obtains and renews the TLS certificate and proxies WebSocket connections to the signalling server container. Docker publishes UDP 3478 directly to the STUN service; Caddy does not proxy STUN. In the desktop app, use the public URL:
+Caddy obtains and renews the HTTPS certificate and proxies SignalR/WebSocket traffic to the server container. UDP 3478 is published directly to the server container; Caddy does not proxy STUN. Use `https://YOUR_DOMAIN` as the server URL in the desktop clients.
 
-`https://your-domain.example`
+The Docker production configuration is separate from the Windows home-PC setup. Do not run both against the same ports on one machine.
 
-The Caddy reverse proxy must support WebSocket upgrades. Caddy's `reverse_proxy` does this automatically. Allow UDP 3478 in the VM/cloud firewall as well as in the host firewall.
+## Network and security requirements
 
-## Capacity and security notes
+- Internet clients connect to the signalling endpoint over HTTPS/WSS and use UDP 3478 for STUN.
+- The signalling server must itself be reachable by every participant. Hosting behind a home router requires port forwarding or another public hosting arrangement.
+- Clients do not need inbound router rules or port forwarding.
+- STUN discovers public UDP mappings; it does not guarantee that every pair of networks can establish a direct connection. Symmetric NATs, VPNs and restrictive firewalls can prevent direct peer connectivity.
+- If a direct authenticated UDP path cannot be established, the listener receives no audio. ListenTogether reports/retries the direct connection; it does not fall back to sending audio through SignalR or the server.
+- Treat eight-character session codes as private bearer credentials: anyone who has a code can attempt to join that session.
+- Run one signalling server instance. Session state is in memory and is not shared across replicas.
+- The current candidate gathering and media transport are IPv4-only.
 
-- The signalling service supports 16 participants per session, including the host.
-- The server accepts Opus packets up to 1,275 bytes and limits the host packet cadence.
-- Session codes are random eight-character bearer credentials. Anyone with a code can join that session.
-- Session state is held in process memory. A restart or deployment replacement ends all sessions.
-- Run a single signalling server instance. The current in-memory registry is not shared between replicas.
-- Use HTTPS/WSS for internet traffic. Do not publish the container's plain HTTP port directly to the internet.
-- The signalling server never handles live audio packets; media travels directly between peers over encrypted UDP.
-- At the default Opus bitrate, estimate approximately 128 kbit/s of host upload per listener, plus protocol overhead and server egress.
-
-For production use, put the signalling server behind a firewall and trusted TLS reverse proxy. Keep the Docker container's port private to the proxy.
-
-
-## Direct UDP and reachability
-
-- Clients only need outbound access to the signalling HTTPS endpoint and UDP STUN port 3478. They do not need inbound router rules or port forwarding.
-- The STUN service must be reachable from the public internet for server-reflexive candidates to work. The direct UDP path is attempted between peers; some NAT combinations (especially symmetric or restrictive NATs) may prevent it. Those listeners do not receive audio. The app reports the failure and retries direct connectivity checks.
-- The signalling server itself must have a public endpoint. Running Docker Compose on a home PC behind a router does not make that server reachable from the internet. Without router forwarding or a tunnel/public hosting endpoint, only same-LAN clients can reach it.
-- The included production Compose file uses Caddy with a DNS name for managed HTTPS. A domain-free public TLS setup is not currently automated; do not expose the development HTTP endpoint to the public internet.
+For protocol details, encryption and connection establishment, see [NETWORKING_ARCHITECTURE.md](NETWORKING_ARCHITECTURE.md). For real-device audio checks, see [SMOKE_TEST.md](SMOKE_TEST.md) and [MANUAL_TESTING.md](MANUAL_TESTING.md).
